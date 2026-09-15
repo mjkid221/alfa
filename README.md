@@ -551,6 +551,52 @@ dark surface: lightness band, chroma floor, adjacent-pair CVD separation (worst
 
 ---
 
+## Developer mode
+
+A toggle in the header switches the screen between two questions. **Research** is
+the valuation lens the app was built as. **Developer** asks what it costs to run
+code on each chain, what it is built on, who runs it, and whether anyone is still
+building — the same 85 chains, the same visual language, a different page.
+
+It is a different page rather than different columns: the hero becomes cheapest
+gas, most developers and most decentralised; the market rail becomes a breakdown
+of virtual machines and rollup stacks; the alpha map becomes a globe of node
+locations; the preset filters, which are verdicts of the valuation model, become
+a filter by virtual machine. None of it feeds the score.
+
+| What | Where from | Covers |
+|---|---|---|
+| Gas price, block limit, block fullness | The chain's own node, via public RPC | 42 of 85 |
+| Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
+| Monthly active developers | Electric Capital | 45 of 85 |
+| Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
+| Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
+| Node locations | bitnodes, and Solana's own cluster | 2 of 85 |
+
+Coverage varies enormously, so every panel states its own rather than implying
+completeness.
+
+**Three things were done the hard way on purpose.** Developer counts come from
+Electric Capital rather than GitHub, because counting a chain's advertised org
+gets the largest ecosystems badly wrong — Polygon's last pushed in January 2026
+and Solana's in March 2025, so both would read as abandoned. The Nakamoto
+coefficient is computed from each chain's validator set rather than collected
+from a tracker, because the definition varies: nakaflow.io publishes 10 for
+Solana where summing stake to a third gives 18, and a column mixing definitions
+would mean nothing. And improvement proposals are a verified per-chain registry,
+because no aggregator covers them — Boardroom and Tally both want a key.
+
+The globe draws one point per **distinct location**, not per node: Bitcoin's
+26,566 nodes collapse to about 3,300 coordinates, because a datacentre rack is
+one place however many machines are in it. There is no basemap — at that density
+the nodes draw the continents themselves.
+
+**One rule changed.** Gas needs a node, and public endpoints answer for 39 of the
+41 EVM chains but not reliably for the rest, so `ALCHEMY_API_KEY` is an optional
+fallback — tried only after public RPC, cached for 60 seconds, and making no
+calls at all while nobody is looking at developer mode. Unset, the feature
+degrades to public endpoints exactly as the app degrades without Redis.
+
 ## Limitations
 
 - Market caps are **circulating**, not fully diluted. A chain with a large unlock

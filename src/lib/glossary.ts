@@ -250,6 +250,52 @@ export const GLOSSARY = {
       "multiple = all-time-high price ÷ current price. Implied cap = all-time-high price × today's supply.",
   },
 
+  virtualMachine: {
+    title: "Virtual machine",
+    short:
+      "The execution environment a chain runs — EVM, SVM, Move, Cairo — which decides what language you write contracts in.",
+    long: "It is the first thing that determines whether your existing code runs somewhere. An EVM chain takes Solidity and the whole Ethereum toolchain; Solana's SVM takes Rust; Move chains take Move.\n\nWhere L2Beat tracks the chain, this is their badge — a registry somebody else keeps current. Otherwise it is proven rather than assumed: **a chain that answers an Ethereum RPC is running an EVM**, which settled nine chains a hand-written table had missed. Only where neither applies does it fall back to a curated entry, and six of the newest chains have none at all.",
+  },
+
+  gasPrice: {
+    title: "Gas price",
+    short:
+      "What one unit of computation currently costs on the chain, in gwei, read from a node on that chain.",
+    long: "This is the live number on this screen — it moves by the second, where most figures here move by the day. It is read directly from a node rather than an aggregator, because no aggregator publishes it.\n\nComparing it across chains needs care: a gwei is a billionth of the chain's own token, so a low gas price on an expensive token is not automatically cheap. Read it against the block gas limit for how much room there is, and against the token's price for what it actually costs.\n\nAbout 42 of the 85 chains answer a public node. The rest are either not EVM or publish no reachable endpoint, and show nothing rather than a guess.",
+  },
+
+  gasLimit: {
+    title: "Block gas limit",
+    short:
+      "How much computation fits in one block, and how much of the last block was used.",
+    long: "The limit is the ceiling on a single block; the fullness figure beside it is how much of that ceiling the most recent block actually consumed. Together they say whether a chain has headroom or is running hot.\n\nSome chains have no meaningful limit and report a placeholder instead — Arbitrum returns 2^50, which is a sentinel rather than a ceiling. Those are shown blank, because printing 1.1 quadrillion gas would be worse than printing nothing.",
+  },
+
+  devActivity: {
+    title: "Monthly active developers",
+    short:
+      "How many people committed code to the chain's ecosystem in the last month, from Electric Capital.",
+    long: "Counted by Electric Capital, who maintain the mapping from ecosystem to repositories. That mapping is the whole point: counting commits against a chain's advertised GitHub org gets the largest chains badly wrong, because orgs move — Polygon's last pushed in January 2026 and Solana's in March 2025, so both would read as abandoned.\n\nThe figure splits into developers who work only on this chain and those who also work elsewhere, which is the difference between a resident community and passing traffic.\n\nCovers 45 of the 85 chains; the rest are too new or too small to be tracked as ecosystems.",
+    example:
+      "Ethereum 7,457 · Solana 2,321 · Base 1,176 · Monad 175, as of September 2026.",
+  },
+
+  nakamoto: {
+    title: "Nakamoto coefficient",
+    short:
+      "The smallest number of validators who would have to collude to halt the chain.",
+    long: "Formally, the fewest validators controlling more than a third of stake — a third being the threshold at which a Byzantine-fault-tolerant chain can no longer finalise blocks. Higher is more decentralised. A coefficient of 2 means two operators could stop it.\n\nIt is **computed here from each chain's own validator set**, not collected from a tracker. That matters because the definition varies: nakaflow.io publishes 10 for Solana where summing stake to a third gives 18. Both are defensible, and a column mixing them would mean nothing — so one definition is applied everywhere and the chain's own endpoint is the source.\n\nOnly 8 chains publish a validator set reachable this way. Sui has deprecated the JSON-RPC that served it and THORChain serves neither, so both show nothing rather than a stale figure.",
+    formula:
+      "Sort validators by stake, descending. Count how many it takes for the running total to pass a third of all stake.",
+  },
+
+  nodeGeography: {
+    title: "Node locations",
+    short:
+      "Where the machines running a chain physically sit, one point per distinct location.",
+    long: "A point is a **location, not a node**. Bitcoin's 26,566 nodes collapse to about 3,300 coordinates and Solana's 3,800 to roughly a thousand network blocks, because a datacentre rack is one place however many machines are in it. Drawing a dot per node would pile a rack into a single pixel and imply a precision neither source has.\n\nOnly two chains publish this. Bitcoin's node crawler gives coordinates directly; Solana's nodes announce their addresses, which are then located by network block. Every other chain in the universe publishes nothing: validator maps exist for some, but they are built by third parties running their own nodes and watching the gossip network, and none offers a public feed. Where a chain publishes nothing, this says so rather than drawing an empty sphere.\n\nIt measures reachable nodes, not stake. A chain can be geographically spread and still concentrated in who actually produces blocks — that is what the Nakamoto coefficient is for.",
+  },
+
   newsCategory: {
     title: "What kind of news",
     short:

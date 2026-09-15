@@ -13,7 +13,9 @@ import {
 import { useEffect, useId, useState } from "react";
 
 import { GitHubMark, SOCIAL, XMark } from "~/components/ui/brand-marks";
+import { Segmented } from "~/components/ui/segmented";
 import { useWindows } from "~/components/window/window-context";
+import { SCREEN_MODES, type ScreenMode } from "~/lib/screen-mode";
 
 import { cn } from "~/lib/cn";
 import { formatAge } from "~/lib/format";
@@ -31,9 +33,17 @@ const CONDENSE_AT = 24;
 export function PageHeader({
   meta,
   onOpenPalette,
+  mode,
+  onModeChange,
 }: {
   meta: AggregateMeta;
   onOpenPalette?: () => void;
+  /**
+   * The screen mode, where the page has one. The chain pages do not, so both
+   * are optional and the control simply does not render there.
+   */
+  mode?: ScreenMode;
+  onModeChange?: (next: ScreenMode) => void;
 }) {
   const condensed = useCondensed();
 
@@ -72,6 +82,25 @@ export function PageHeader({
             what a chain earns against what it costs
           </span>
         </Link>
+
+        {/*
+          The mode switch sits with the wordmark rather than down in the filter
+          row, because it is not a filter: it changes which screen you are
+          looking at. Kept compact so the phone bar stays one row.
+        */}
+        {mode && onModeChange && (
+          <Segmented
+            label="Screen mode"
+            size="compact"
+            value={mode}
+            onChange={onModeChange}
+            options={(["research", "developer"] as ScreenMode[]).map((key) => ({
+              value: key,
+              label: SCREEN_MODES[key].short,
+              hint: SCREEN_MODES[key].hint,
+            }))}
+          />
+        )}
 
         {/* On phones the bar is one row: icon-only window buttons, the source
             dots without their count, and no freshness text or shortcut hint.
@@ -163,11 +192,17 @@ function useCondensed(): boolean {
  * zero width and fade, which keeps the condensed header to what a reader
  * scrolling a ranking actually needs.
  *
- * Collapsed is not merely invisible: a zero-width link with `opacity: 0` still
- * takes keyboard focus, which would put the focus ring somewhere nothing is
- * drawn. They are removed from the tab order and from the accessibility tree
- * while hidden, and the footer carries the same two links for anyone who has
- * scrolled past them.
+ * Collapsed means **unmounted**, not merely invisible. Two earlier attempts
+ * were not enough: a zero-width link with `opacity: 0` still takes keyboard
+ * focus, and collapsing the wrapper to `max-w-0` left the `shrink-0` links
+ * laid out past the viewport, adding 31px to the document's scrollable width —
+ * a horizontal scrollbar on every condensed header at `xl` and above, which
+ * `overflow: clip` did not remove either. Removing them from the tree is the
+ * only version with no overflow and no stray focus target, and the footer
+ * carries the same two links for anyone who has scrolled past.
+ *
+ * The cost is the fade: they appear and disappear rather than easing. The bar's
+ * padding still animates, so the change still reads as the header tightening.
  *
  * Hidden below `xl` regardless, and that breakpoint was measured rather than
  * guessed: at `lg` these 69px tipped the bar onto a second row from 1100 to
@@ -176,20 +211,10 @@ function useCondensed(): boolean {
  * Below `xl` the footer is the place for them.
  */
 function SocialLinks({ condensed }: { condensed: boolean }) {
+  if (condensed) return null;
+
   return (
-    <span
-      className={cn(
-        "hidden items-center overflow-hidden transition-all xl:flex",
-        condensed
-          ? "pointer-events-none max-w-0 opacity-0"
-          : "max-w-[8rem] opacity-100",
-      )}
-      style={{
-        transitionDuration: "var(--dur-standard)",
-        transitionTimingFunction: "var(--ease-standard)",
-      }}
-      aria-hidden={condensed}
-    >
+    <span className="hidden items-center xl:flex">
       <span className="bg-hairline mx-1.5 h-4 w-px shrink-0" aria-hidden />
       {[
         { ...SOCIAL.github, Mark: GitHubMark },
@@ -202,7 +227,6 @@ function SocialLinks({ condensed }: { condensed: boolean }) {
           rel="noreferrer"
           title={title}
           aria-label={title}
-          tabIndex={condensed ? -1 : undefined}
           className="text-ink-muted hover:text-ink rounded-control inline-flex size-7 shrink-0 items-center justify-center transition-colors"
           style={{ transitionDuration: "var(--dur-micro)" }}
         >

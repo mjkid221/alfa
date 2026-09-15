@@ -20,6 +20,7 @@ import { ChainAvatar, Delta, TierBadge } from "~/components/ui/primitives";
 import type { GlossaryTerm } from "~/lib/glossary";
 import { cn } from "~/lib/cn";
 import {
+  formatCount,
   formatMultiple,
   formatPercent,
   formatSigned,
@@ -28,6 +29,8 @@ import {
 import { divergingHue } from "~/lib/palette";
 import { capLabel, capShort, type CapBasis } from "~/lib/valuation-basis";
 import type { ChainSnapshot } from "~/server/domain/types";
+import type { DeveloperMetrics } from "~/server/domain/developer";
+import type { ScreenMode } from "~/lib/screen-mode";
 
 /**
  * The chain column: index, avatar, name and symbol with the tier badge. Wide
@@ -51,7 +54,14 @@ type SortKey =
   | "stablecoins"
   | "rwaValue"
   | "bridgeVolume30d"
-  | "confidence";
+  | "confidence"
+  // Developer mode. The same table, a different question.
+  | "gasPrice"
+  | "gasLimit"
+  | "gasUsedPct"
+  | "devs"
+  | "nakamoto"
+  | "vm";
 
 interface Column {
   key: SortKey;
@@ -63,20 +73,29 @@ interface Column {
   align: "left" | "right";
   width: number;
   sticky?: boolean;
-  value: (chain: ChainSnapshot) => number | null;
+  value: (chain: ChainSnapshot, dev: DeveloperMetrics | null) => number | null;
   render: (
     chain: ChainSnapshot,
-    context: { median: number | null },
+    context: { median: number | null; dev: DeveloperMetrics | null },
   ) => React.ReactNode;
 }
 
 export function ChainTable({
   chains,
   feeMultipleMedian,
+  developer,
+  mode = "research",
   className,
 }: {
   chains: readonly ChainSnapshot[];
   feeMultipleMedian: number | null;
+  /**
+   * Developer metrics by slug. Kept beside the rows rather than merged into
+   * them because they come from a different request on a different cadence —
+   * gas is 60 seconds old, the ranking is five minutes.
+   */
+  developer?: ReadonlyMap<string, DeveloperMetrics>;
+  mode?: ScreenMode;
   className?: string;
 }) {
   const router = useRouter();
@@ -88,7 +107,7 @@ export function ChainTable({
   // column reads as a market cap that has silently quadrupled.
   const basis = useFiltersStore((state) => state.basis);
 
-  const columns = useMemo<Column[]>(
+  const researchColumns = useMemo<Column[]>(
     () => [
       {
         key: "mispricing",
@@ -332,6 +351,117 @@ export function ChainTable({
     [basis],
   );
 
+  /**
+   * Developer mode's columns.
+   *
+   * The same shape, so sorting, the mobile cards and the sticky chain column
+   * all work unchanged — only what is being asked about differs. Every one of
+   * these renders an explicit dash where the chain has no source, because about
+   * half the universe has no reachable node and most have no published
+   * validator set.
+   */
+  const developerColumns = useMemo<Column[]>(
+    () => [
+      {
+        key: "vm",
+        label: "VM",
+        hint: "Virtual machine. From L2Beat where it tracks the chain, otherwise proven by the chain answering an Ethereum RPC.",
+        term: "virtualMachine",
+        align: "left",
+        width: 128,
+        // Sorted by name rather than a number, so this keeps sorting stable and
+        // lets the column exist as a filterable label.
+        value: (_chain, dev) => (dev?.vm ? 1 : null),
+        render: (_chain, { dev }) =>
+          dev?.vm ? (
+            <span className="text-ink-secondary text-[12.5px]">{dev.vm}</span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
+      },
+      {
+        key: "gasPrice",
+        label: "Gas price",
+        hint: "Current gas price in gwei, read from a node on the chain itself.",
+        term: "gasPrice",
+        align: "right",
+        width: 128,
+        value: (_chain, dev) => dev?.gas?.gasPriceGwei ?? null,
+        render: (_chain, { dev }) => <Gwei value={dev?.gas?.gasPriceGwei} />,
+      },
+      {
+        key: "gasLimit",
+        label: "Block gas limit",
+        hint: "How much gas fits in one block. Blank where the chain does not meaningfully have a limit.",
+        term: "gasLimit",
+        align: "right",
+        width: 148,
+        value: (_chain, dev) => dev?.gas?.gasLimit ?? null,
+        render: (_chain, { dev }) => (
+          <span className="tnum text-[12.5px]">
+            {dev?.gas?.gasLimit ? formatCount(dev.gas.gasLimit) : "—"}
+          </span>
+        ),
+      },
+      {
+        key: "gasUsedPct",
+        label: "Block full",
+        hint: "How much of the last block's gas limit was used.",
+        term: "gasLimit",
+        align: "right",
+        width: 120,
+        value: (_chain, dev) => dev?.gas?.gasUsedPct ?? null,
+        render: (_chain, { dev }) =>
+          dev?.gas?.gasUsedPct === null ||
+          dev?.gas?.gasUsedPct === undefined ? (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ) : (
+            <PercentileBar value={dev.gas.gasUsedPct} width={64} />
+          ),
+      },
+      {
+        key: "devs",
+        label: "Devs 30d",
+        hint: "Monthly active developers, from Electric Capital. Covers 45 of the 85 chains.",
+        term: "devActivity",
+        align: "right",
+        width: 132,
+        value: (_chain, dev) => dev?.developers?.monthlyActive ?? null,
+        render: (_chain, { dev }) =>
+          dev?.developers ? (
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="tnum text-[12.5px]">
+                {formatCount(dev.developers.monthlyActive)}
+              </span>
+              <Delta value={dev.developers.changeYoy} />
+            </span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
+      },
+      {
+        key: "nakamoto",
+        label: "Nakamoto",
+        hint: "Smallest number of validators controlling more than a third of stake. Computed from each chain's own validator set.",
+        term: "nakamoto",
+        align: "right",
+        width: 124,
+        value: (_chain, dev) => dev?.decentralisation?.nakamoto ?? null,
+        render: (_chain, { dev }) =>
+          dev?.decentralisation ? (
+            <span className="tnum text-[12.5px]">
+              {dev.decentralisation.nakamoto}
+            </span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
+      },
+    ],
+    [],
+  );
+
+  const columns = mode === "developer" ? developerColumns : researchColumns;
+
   const tableWidth =
     CHAIN_COLUMN_WIDTH + columns.reduce((sum, column) => sum + column.width, 0);
 
@@ -346,14 +476,14 @@ export function ChainTable({
     if (!column) return chains;
 
     return [...chains].sort((a, b) => {
-      const left = column.value(a);
-      const right = column.value(b);
+      const left = column.value(a, developer?.get(a.slug) ?? null);
+      const right = column.value(b, developer?.get(b.slug) ?? null);
       if (left === null && right === null) return 0;
       if (left === null) return 1; // missing data always sinks
       if (right === null) return -1;
       return sort.direction === "desc" ? right - left : left - right;
     });
-  }, [chains, columns, sort]);
+  }, [chains, columns, sort, developer]);
 
   function toggleSort(key: SortKey) {
     setSort((previous) =>
@@ -382,6 +512,8 @@ export function ChainTable({
         sort={sort}
         setSort={setSort}
         basis={basis}
+        developer={developer}
+        mode={mode}
       />
 
       <div className="scroll-slim hidden overflow-x-auto md:block">
@@ -528,7 +660,10 @@ export function ChainTable({
                       column.align === "right" ? "text-right" : "text-left",
                     )}
                   >
-                    {column.render(chain, { median: feeMultipleMedian })}
+                    {column.render(chain, {
+                      median: feeMultipleMedian,
+                      dev: developer?.get(chain.slug) ?? null,
+                    })}
                   </td>
                 ))}
               </tr>
@@ -549,18 +684,43 @@ export function ChainTable({
  * moves into a select, since the column headers that carried it are gone, and
  * shares the same persisted store as the table.
  */
+/**
+ * A gas price in gwei.
+ *
+ * Chains span eleven orders of magnitude here — Celo quotes 202 gwei where
+ * Linea quotes 0.000000007 — so a fixed number of decimals would render most of
+ * the table as either "0.00" or noise. This keeps three significant figures and
+ * drops to scientific notation below a millionth.
+ */
+function Gwei({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return <span className="text-ink-faint text-[12.5px]">—</span>;
+  }
+  const text =
+    value === 0
+      ? "0"
+      : value < 1e-6
+        ? value.toExponential(1)
+        : Number(value.toPrecision(3)).toString();
+  return <span className="tnum text-[12.5px]">{text}</span>;
+}
+
 function MobileList({
   rows,
   columns,
   sort,
   setSort,
   basis,
+  developer,
+  mode,
 }: {
   rows: readonly ChainSnapshot[];
   columns: readonly Column[];
   sort: TableSort;
   setSort: (next: TableSort | ((current: TableSort) => TableSort)) => void;
   basis: CapBasis;
+  developer?: ReadonlyMap<string, DeveloperMetrics>;
+  mode: ScreenMode;
 }) {
   // Eighty-five cards at once made a 15,000px page. The first twenty are the
   // ones a sort was chosen for; the rest are a tap away, and a new sort or
@@ -666,32 +826,44 @@ function MobileList({
                   </div>
                 </div>
 
+                {/*
+                  The card's six figures follow the mode, the way the desktop
+                  columns do. The value gap above them stays in both, because it
+                  is the chain's standing on this screen and losing it would
+                  make switching modes feel like a different list.
+                */}
                 <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 pl-8">
-                  <MobileStat
-                    label="Fundamentals"
-                    value={scoreText(chain.scores.fundamental)}
-                  />
-                  <MobileStat
-                    label="Momentum"
-                    value={scoreText(chain.scores.momentum)}
-                  />
-                  <MobileStat
-                    label="Cheapness"
-                    value={scoreText(chain.scores.cheapness)}
-                  />
-                  <MobileStat
-                    label={capLabel(basis)}
-                    value={formatUsd(chain.metrics.marketCap)}
-                  />
-                  <MobileStat
-                    label="TVL"
-                    value={formatUsd(chain.metrics.tvl)}
-                  />
-                  <MobileStat
-                    label="Fees 30d"
-                    value={formatUsd(chain.metrics.fees30d)}
-                    delta={chain.metrics.feesChange30d}
-                  />
+                  {mode === "developer" ? (
+                    <MobileDeveloperStats dev={developer?.get(chain.slug)} />
+                  ) : (
+                    <>
+                      <MobileStat
+                        label="Fundamentals"
+                        value={scoreText(chain.scores.fundamental)}
+                      />
+                      <MobileStat
+                        label="Momentum"
+                        value={scoreText(chain.scores.momentum)}
+                      />
+                      <MobileStat
+                        label="Cheapness"
+                        value={scoreText(chain.scores.cheapness)}
+                      />
+                      <MobileStat
+                        label={capLabel(basis)}
+                        value={formatUsd(chain.metrics.marketCap)}
+                      />
+                      <MobileStat
+                        label="TVL"
+                        value={formatUsd(chain.metrics.tvl)}
+                      />
+                      <MobileStat
+                        label="Fees 30d"
+                        value={formatUsd(chain.metrics.fees30d)}
+                        delta={chain.metrics.feesChange30d}
+                      />
+                    </>
+                  )}
                 </dl>
               </Link>
             </li>
@@ -719,6 +891,46 @@ const MOBILE_PAGE = 20;
 /** A 0–100 score as text, or a dash where the model has none. */
 const scoreText = (value: number | null) =>
   value === null ? "—" : Math.round(value).toString();
+
+/** The same six slots, asking the engineering question instead. */
+function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
+  const gwei = (value: number | null | undefined) =>
+    value === null || value === undefined || !Number.isFinite(value)
+      ? "—"
+      : value < 1e-6
+        ? value.toExponential(1)
+        : Number(value.toPrecision(3)).toString();
+
+  return (
+    <>
+      <MobileStat label="VM" value={dev?.vm ?? "—"} />
+      <MobileStat label="Gas (gwei)" value={gwei(dev?.gas?.gasPriceGwei)} />
+      <MobileStat
+        label="Block limit"
+        value={dev?.gas?.gasLimit ? formatCount(dev.gas.gasLimit) : "—"}
+      />
+      <MobileStat
+        label="Block full"
+        value={
+          dev?.gas?.gasUsedPct === null || dev?.gas?.gasUsedPct === undefined
+            ? "—"
+            : `${dev.gas.gasUsedPct.toFixed(0)}%`
+        }
+      />
+      <MobileStat
+        label="Devs 30d"
+        value={
+          dev?.developers ? formatCount(dev.developers.monthlyActive) : "—"
+        }
+        delta={dev?.developers?.changeYoy ?? null}
+      />
+      <MobileStat
+        label="Nakamoto"
+        value={dev?.decentralisation?.nakamoto?.toString() ?? "—"}
+      />
+    </>
+  );
+}
 
 function MobileStat({
   label,

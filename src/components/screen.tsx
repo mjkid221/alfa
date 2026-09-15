@@ -10,7 +10,15 @@ import {
 import { Controls } from "~/components/controls";
 import { applyFilters } from "~/components/filters";
 import { PageHeader } from "~/components/header";
+import { DeveloperLeaders } from "~/components/developer-leaders";
+import {
+  DeveloperRail,
+  DeveloperSources,
+  NodeGlobePanel,
+} from "~/components/developer-panels";
 import { DivisionLeaders, type Division } from "~/components/division-leaders";
+import { ModeSwap } from "~/components/mode-swap";
+import { vmFamilyOf } from "~/lib/screen-mode";
 import { MarketRail } from "~/components/market/market-rail";
 import { MethodologyPanel } from "~/components/methodology";
 import { SiteFooter } from "~/components/site-footer";
@@ -20,6 +28,7 @@ import { cn } from "~/lib/cn";
 import { rebaseUniverse } from "~/lib/rebase-universe";
 import { capLabel } from "~/lib/valuation-basis";
 import { useFiltersStore } from "~/stores/filters-store";
+import type { DeveloperMetrics } from "~/server/domain/developer";
 import type { ChainSnapshot } from "~/server/domain/types";
 import { api } from "~/trpc/react";
 
@@ -31,6 +40,10 @@ export function Screen() {
   const setFilters = useFiltersStore((state) => state.setFilters);
   const basis = useFiltersStore((state) => state.basis);
   const setBasis = useFiltersStore((state) => state.setBasis);
+  const mode = useFiltersStore((state) => state.mode);
+  const setMode = useFiltersStore((state) => state.setMode);
+  const vm = useFiltersStore((state) => state.vm);
+  const setVm = useFiltersStore((state) => state.setVm);
   useEffect(() => {
     void useFiltersStore.persist.rehydrate();
   }, []);
@@ -55,6 +68,25 @@ export function Screen() {
   const methodology = api.chains.methodology.useQuery(undefined, {
     staleTime: Infinity,
   });
+
+  /*
+   * Developer metrics, fetched only once the mode is asked for.
+   *
+   * Gas is read from ~42 chains' own nodes and is 60 seconds old by design, so
+   * it neither belongs in the ranking snapshot nor should be paid for by a
+   * reader who never leaves the valuation lens.
+   */
+  const developer = api.developer.list.useQuery(undefined, {
+    staleTime: 60_000,
+    enabled: mode === "developer",
+    placeholderData: (previous) => previous,
+  });
+
+  const developerBySlug = useMemo(() => {
+    const map = new Map<string, DeveloperMetrics>();
+    for (const row of developer.data?.chains ?? []) map.set(row.slug, row);
+    return map;
+  }, [developer.data]);
   // The indicator rail. Prefetched on the server; re-polled while any source
   // is still warming or answered badly when the page was built, so a tile that
   // came up "unavailable" recovers without a reload.
@@ -91,10 +123,25 @@ export function Screen() {
   const chains = rebased?.chains ?? served;
   const regression = rebased?.regression ?? meta?.regression ?? null;
 
-  const visible = useMemo(
+  const filtered = useMemo(
     () => applyFilters(chains, filters),
     [chains, filters],
   );
+
+  /*
+   * Developer mode narrows by machine instead of by preset.
+   *
+   * It filters here rather than inside `applyFilters` because the virtual
+   * machine is not on the snapshot — it comes from the developer dataset, on a
+   * different request — and `applyFilters` is deliberately a pure function of
+   * the chains and the filters so the table and the scatter can never disagree.
+   */
+  const visible = useMemo(() => {
+    if (mode !== "developer" || vm === "any") return filtered;
+    return filtered.filter(
+      (chain) => vmFamilyOf(developerBySlug.get(chain.slug)?.vm ?? null) === vm,
+    );
+  }, [filtered, mode, vm, developerBySlug]);
 
   /** Peer median of the headline multiple, for the table's comparison meter. */
   const feeMultipleMedian = useMemo(() => {
@@ -214,7 +261,12 @@ export function Screen() {
 
   return (
     <>
-      <PageHeader meta={meta} onOpenPalette={() => setPaletteOpen(true)} />
+      <PageHeader
+        meta={meta}
+        onOpenPalette={() => setPaletteOpen(true)}
+        mode={mode}
+        onModeChange={setMode}
+      />
 
       <main
         className={cn(
@@ -229,46 +281,78 @@ export function Screen() {
           comes second, which is where it lands below `xl`: under the hero.
         */}
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-rows-[auto_1fr]">
-          <DivisionLeaders
-            id="headline"
-            divisions={leaders.divisions}
-            universeSize={meta.universeSize}
-            undervaluedCount={deepValue}
-            unclassifiedCount={leaders.unclassifiedCount}
-            outsider={leaders.outsider}
-            capLabel={capLabel(basis)}
-            className="xl:col-start-1 xl:row-start-1"
-          />
+          <ModeSwap mode={mode} className="xl:col-start-1 xl:row-start-1">
+            {mode === "developer" ? (
+              <DeveloperLeaders
+                id="headline"
+                rows={developer.data?.chains ?? []}
+                loading={developer.isPending}
+              />
+            ) : (
+              <DivisionLeaders
+                id="headline"
+                divisions={leaders.divisions}
+                universeSize={meta.universeSize}
+                undervaluedCount={deepValue}
+                unclassifiedCount={leaders.unclassifiedCount}
+                outsider={leaders.outsider}
+                capLabel={capLabel(basis)}
+              />
+            )}
+          </ModeSwap>
 
-          <MarketRail
-            id="market-rail"
-            brief={brief.data}
+          {/*
+            The rail and the panel below it both belong to a mode. Fear & Greed
+            over Bitcoin and a scatter of market cap against economic scale are
+            valuation instruments; neither answers anything for someone choosing
+            where to deploy a contract. Developer mode replaces both outright,
+            which is what makes it a different page rather than the same page
+            with different columns.
+          */}
+          <ModeSwap
+            mode={mode}
+            stagger={35}
             className="xl:col-start-2 xl:row-span-2 xl:row-start-1"
-          />
+          >
+            {mode === "developer" ? (
+              <DeveloperRail rows={developer.data?.chains ?? []} />
+            ) : (
+              <MarketRail id="market-rail" brief={brief.data} />
+            )}
+          </ModeSwap>
 
-          <Panel
-            title="The alpha map"
-            subtitle="Every chain plotted by what it earns against what it costs. The line is the peer trend; the shaded band is one standard deviation of the residuals. Points below the line are priced under what their economics support."
-            bodyClassName="px-4 pt-2 pb-4"
+          <ModeSwap
+            mode={mode}
+            stagger={70}
             className="xl:col-start-1 xl:row-start-2 xl:self-start"
           >
-            <AlphaMap
-              points={points}
-              yDomain={marketCapDomain}
-              capLabel={capLabel(basis)}
-              regression={
-                regression
-                  ? {
-                      slope: regression.slope,
-                      intercept: regression.intercept,
-                      residualSd: regression.residualSd,
-                      rSquared: regression.rSquared,
-                      sampleSize: regression.sampleSize,
-                    }
-                  : null
-              }
-            />
-          </Panel>
+            {mode === "developer" ? (
+              <NodeGlobePanel />
+            ) : (
+              <Panel
+                title="The alpha map"
+                subtitle="Every chain plotted by what it earns against what it costs. The line is the peer trend; the shaded band is one standard deviation of the residuals. Points below the line are priced under what their economics support."
+                bodyClassName="px-4 pt-2 pb-4"
+              >
+                <AlphaMap
+                  points={points}
+                  yDomain={marketCapDomain}
+                  capLabel={capLabel(basis)}
+                  regression={
+                    regression
+                      ? {
+                          slope: regression.slope,
+                          intercept: regression.intercept,
+                          residualSd: regression.residualSd,
+                          rSquared: regression.rSquared,
+                          sampleSize: regression.sampleSize,
+                        }
+                      : null
+                  }
+                />
+              </Panel>
+            )}
+          </ModeSwap>
         </section>
 
         <Controls
@@ -276,20 +360,37 @@ export function Screen() {
           onChange={setFilters}
           basis={basis}
           onBasisChange={setBasis}
+          mode={mode}
+          vm={vm}
+          onVmChange={setVm}
           supplyMix={rebased?.supplyMix ?? null}
           resultCount={visible.length}
           totalCount={chains.length}
         />
 
-        <Panel bodyClassName="p-0">
-          <ChainTable chains={visible} feeMultipleMedian={feeMultipleMedian} />
-        </Panel>
+        {/* Staggered behind the hero, so the swap reads top-down. */}
+        <ModeSwap mode={mode} stagger={70}>
+          <Panel bodyClassName="p-0">
+            <ChainTable
+              chains={visible}
+              feeMultipleMedian={feeMultipleMedian}
+              developer={developerBySlug}
+              mode={mode}
+            />
+          </Panel>
+        </ModeSwap>
 
-        <MethodologyPanel
-          methodology={methodology.data}
-          meta={meta}
-          example={leaders.example}
-        />
+        <ModeSwap mode={mode} stagger={105}>
+          {mode === "developer" ? (
+            <DeveloperSources rows={developer.data?.chains ?? []} />
+          ) : (
+            <MethodologyPanel
+              methodology={methodology.data}
+              meta={meta}
+              example={leaders.example}
+            />
+          )}
+        </ModeSwap>
       </main>
 
       <SiteFooter meta={meta} />

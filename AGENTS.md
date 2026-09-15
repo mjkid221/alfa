@@ -51,9 +51,15 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
    nothing from `market*`. Fear & Greed, altcoin season, rainbow, cycles and
    flows are shown, never scored. Check with
    `grep -n "market-" src/server/domain/score.ts src/server/domain/aggregate.ts`.
-2. **Every source is free and keyless.** No paid tiers, no API keys beyond the
-   optional Upstash Redis. DefiLlama's bridges API, CoinGecko history beyond
-   365 days and total-market-cap history are paid; do not reintroduce them.
+2. **Every source is free, and keyless wherever possible.** No paid tiers.
+   Two optional keys exist and the app degrades without either: Upstash Redis,
+   and `ALCHEMY_API_KEY` for developer mode's gas readings. Alchemy is a
+   **fallback only** — public RPCs answer for 39 of the 41 EVM chains, so the
+   key serves the handful that are unreliable, and unset the feature falls back
+   to public endpoints. Everything else stays keyless: Boardroom (401) and Tally
+   were rejected for governance on exactly this ground. DefiLlama's bridges API,
+   CoinGecko history beyond 365 days and total-market-cap history are paid; do
+   not reintroduce them.
 3. **Every source is optional.** A failed or slow upstream yields `null` and a
    `degraded`/`unavailable` status, never a thrown page. Sources carry
    deadlines (`deadline()` in `server/lib/http.ts`) so an SSR prefetch never
@@ -156,6 +162,40 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   only titles that name the chain via `NEWS_ALIASES`; ten chains legitimately go
   to zero. Match on word boundaries — `near` otherwise hits "climbs near $65,000"
   and `ton` hits "Washington".
+- Developer mode runs beside the snapshot, never inside it: gas moves by the
+  second where the snapshot is cached for five minutes. `domain/developer.ts`
+  joins five sources at read time and `score.ts` sees none of them.
+- Gas: `chainid.network/chains.json` maps DefiLlama's `chainId` to public RPC
+  lists. 39 of 41 EVM chains answer the first endpoint; **walk the list**, since
+  Ethereum's first entry is dead while publicnode's works. **Arbitrum reports a
+  2^50 gas limit** — a sentinel, not a ceiling, and it must never render.
+- Developer counts come from `developerreport.com/api/charts/dev_mau/{eco}`
+  (Electric Capital), keyless, 45 of 85 chains, unknown ecosystems return **500**
+  not 404. Use this rather than GitHub: they maintain the ecosystem-to-repo
+  mapping, which is what counting a chain's own org gets wrong (Polygon's last
+  pushed January 2026, Solana's March 2025).
+- Nakamoto is **computed** from each chain's own validator set, never collected:
+  nakaflow.io says 10 for Solana where summing stake to a third gives 18. One
+  definition everywhere. Sui deprecated the JSON-RPC that served it and
+  THORChain serves neither, so both are absent by design — 8 chains in total.
+- Improvement proposals have no aggregator. `domain/chain-tech.ts` is a verified
+  per-chain registry: 32 GitHub repos (Monad's is `monad-crypto/MIPs`, directory
+  `MIPs`, case-sensitive) and 17 Discourse forums, whose `/latest.json` is
+  keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
+  Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
+  and never read a README. Verify any new entry live before adding it.
+- Node locations exist for **two** chains. bitnodes' `?field=coordinates` gives
+  3,344 distinct locations in 62 KB; its full snapshot is 2.8 MB and carries **no
+  coordinates at all**. Solana's `getClusterNodes` IPs are deduplicated to /24
+  subnets before geolocating, turning 39 ip-api batches into 11. Monad's
+  validator maps are third-party dashboards with no API, and its RPC answers
+  `Method not found`.
+- `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
+  published APIs. First thing to check if a developer panel goes blank.
+- Wrapping a grid item in another element loses `min-width: auto`'s constraint:
+  `ModeSwap` needed `min-w-0` or each wrapper took its content's intrinsic width
+  — 1,448px inside a 390px phone. And `overflow: clip` does **not** stop a
+  `shrink-0` child from adding to document scroll width; unmount it instead.
 - Social metrics: X's API is paid, `syndication.twitter.com` answers 429 on the
   first request, CoinGecko's free `community_data` is null and keyless GitHub
   allows 60 requests an hour. CoinPaprika `/v1/coins/{id}` carries follower,
