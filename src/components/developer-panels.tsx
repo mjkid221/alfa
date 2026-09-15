@@ -5,11 +5,14 @@ import { useState } from "react";
 import { NodeGlobe } from "~/components/chart/node-globe";
 import { Explain } from "~/components/ui/explain";
 import { Panel } from "~/components/ui/primitives";
+import { Segmented } from "~/components/ui/segmented";
 import { cn } from "~/lib/cn";
 import { formatCount } from "~/lib/format";
+import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { sequentialStep } from "~/lib/palette";
 import { api } from "~/trpc/react";
 import type { DeveloperMetrics } from "~/server/domain/developer";
+import type { NodeMap } from "~/server/sources/node-map";
 
 /**
  * The two panels that make developer mode a different page rather than the same
@@ -24,15 +27,41 @@ import type { DeveloperMetrics } from "~/server/domain/developer";
 
 /* ------------------------------------------------------------------ globe --- */
 
-/** The only two chains that publish node locations. See `sources/node-map.ts`. */
-const GLOBE_CHAINS = ["Bitcoin", "Solana"] as const;
-
+/**
+ * The globe, and the two breakdowns that make it readable.
+ *
+ * The country list is not a caption: hovering a row lights those points and
+ * clicking one turns the globe to that country's centre of mass. That is what
+ * makes the list the keyboard and screen-reader route to the same thing the
+ * canvas offers a mouse, rather than a second-class summary of it.
+ *
+ * The hosting list is the one that actually answers a developer's question.
+ * Geography spread across thirty countries still means very little if two
+ * thirds of it is one company's hardware, which is the same concern the
+ * Nakamoto coefficient measures in stake rather than in racks.
+ */
 export function NodeGlobePanel({ className }: { className?: string }) {
-  const [chain, setChain] = useState<(typeof GLOBE_CHAINS)[number]>("Bitcoin");
+  const [chain, setChain] = useState<string>("Bitcoin");
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const [focus, setFocus] = useState<{ country: string; nonce: number } | null>(
+    null,
+  );
+
   const map = api.developer.nodeMap.useQuery(
     { chain },
     { staleTime: 600_000, placeholderData: (previous) => previous },
   );
+
+  const data = map.data;
+  const countries = data?.countries ?? [];
+  const hosts = data?.hosts ?? [];
+
+  /** A chain switch is a new network; the old country selection means nothing. */
+  const pick = (next: string) => {
+    setChain(next);
+    setHighlight(null);
+    setFocus(null);
+  };
 
   return (
     <Panel
@@ -42,25 +71,15 @@ export function NodeGlobePanel({ className }: { className?: string }) {
           <Explain term="nodeGeography" />
         </span>
       }
-      subtitle="One point per distinct location, not per node — a datacentre rack is one place however many machines are in it."
+      subtitle="One point per distinct location, not per node — a datacentre rack is one place however many machines are in it. Drag the globe to turn it."
       actions={
-        <div className="flex gap-1">
-          {GLOBE_CHAINS.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => setChain(name)}
-              className={cn(
-                "border-hairline rounded-control min-h-8 border px-2.5 text-[11.5px] transition-colors",
-                chain === name
-                  ? "bg-raised text-ink"
-                  : "text-ink-muted hover:text-ink",
-              )}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          options={GLOBE_CHAINS.map((name) => ({ value: name, label: name }))}
+          value={chain}
+          onChange={pick}
+          label="Chain to map"
+          size="compact"
+        />
       }
       bodyClassName="px-4 pt-2 pb-4"
       className={className}
@@ -69,36 +88,71 @@ export function NodeGlobePanel({ className }: { className?: string }) {
         <p className="text-ink-muted px-2 py-16 text-center text-[12.5px]">
           Placing nodes…
         </p>
-      ) : map.data ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
-          <NodeGlobe map={map.data} />
+      ) : data ? (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
+          {/* Taller than the alpha map it replaces: the sphere's radius is
+              bounded by the shorter side, so in a wide panel every pixel of
+              height is a pixel of globe. */}
+          <NodeGlobe
+            map={data}
+            height={400}
+            highlightCountry={highlight}
+            focus={focus}
+            onHoverPoint={(point) => setHighlight(point?.country ?? null)}
+            onFocusRelease={() => setFocus(null)}
+          />
 
           <div className="space-y-3">
             <Stat
-              label="Nodes"
-              value={formatCount(map.data.totalNodes)}
-              note={`across ${formatCount(map.data.points.length)} locations`}
+              label={data.unit}
+              value={formatCount(data.totalNodes)}
+              note={placedNote(data)}
             />
-            {map.data.countries.length > 0 ? (
+
+            {countries.length > 0 ? (
               <div>
                 <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
                   Largest countries
                 </p>
-                <ul className="space-y-1">
-                  {map.data.countries.slice(0, 7).map((row, index) => (
-                    <li
-                      key={row.country}
-                      className="flex items-center gap-2 text-[11.5px]"
-                    >
-                      <span
-                        className="size-2 shrink-0 rounded-[2px]"
-                        style={{ background: sequentialStep(index, 7) }}
-                        aria-hidden
-                      />
-                      <span className="text-ink-secondary">{row.country}</span>
-                      <span className="tnum text-ink-faint ml-auto">
-                        {row.count}
-                      </span>
+                {/* Buttons, not list items: this is the globe's text twin and
+                    the keyboard route to the same focus the canvas offers. */}
+                <ul className="space-y-0.5">
+                  {countries.slice(0, 7).map((row, index) => (
+                    <li key={row.country}>
+                      <button
+                        type="button"
+                        aria-pressed={focus?.country === row.country}
+                        onMouseEnter={() => setHighlight(row.country)}
+                        onMouseLeave={() => setHighlight(null)}
+                        onFocus={() => setHighlight(row.country)}
+                        onBlur={() => setHighlight(null)}
+                        onClick={() =>
+                          setFocus((current) =>
+                            current?.country === row.country
+                              ? null
+                              : {
+                                  country: row.country,
+                                  nonce: (current?.nonce ?? 0) + 1,
+                                },
+                          )
+                        }
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
+                          focus?.country === row.country
+                            ? "bg-raised text-ink"
+                            : "hover:bg-raised text-ink-secondary",
+                        )}
+                      >
+                        <span
+                          className="size-2 shrink-0 rounded-[2px]"
+                          style={{ background: sequentialStep(index, 7) }}
+                          aria-hidden
+                        />
+                        <span className="truncate">{row.country}</span>
+                        <span className="tnum text-ink-faint ml-auto">
+                          {formatCount(row.count)}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -109,8 +163,49 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                 no national breakdown to show.
               </p>
             )}
+
+            {hosts.length > 0 && (
+              <div>
+                <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
+                  Largest hosts
+                </p>
+                <ul className="space-y-1">
+                  {hosts.slice(0, 4).map((row) => (
+                    <li
+                      key={row.host}
+                      className="flex items-baseline gap-2 px-1.5 text-[11.5px]"
+                    >
+                      <span className="text-ink-secondary truncate">
+                        {row.host}
+                      </span>
+                      <span className="tnum text-ink-faint ml-auto">
+                        {formatCount(row.count)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {data.hostConcentration !== null && (
+                  <p className="text-ink-faint mt-1.5 px-1.5 text-[11px] leading-snug">
+                    {Math.round(data.hostConcentration * 100)}% of placed{" "}
+                    {data.unit} sit with one provider.
+                  </p>
+                )}
+              </div>
+            )}
+
             <p className="text-ink-faint text-[11px] leading-relaxed">
-              {map.data.source}
+              {data.observed ? "Observed by " : ""}
+              <a
+                href={data.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-ink-secondary underline underline-offset-2"
+              >
+                {data.source}
+              </a>
+              {data.observed
+                ? ". Monad publishes no node data itself, so this is a third party's measurement of the network."
+                : ""}
             </p>
           </div>
         </div>
@@ -121,6 +216,21 @@ export function NodeGlobePanel({ className }: { className?: string }) {
       )}
     </Panel>
   );
+}
+
+/**
+ * How much of the network the map actually places.
+ *
+ * Says so only when it falls short, because "1,585 of 1,585" is noise — but a
+ * globe that silently drops a hundred nodes it could not geolocate would be
+ * claiming a completeness it does not have.
+ */
+function placedNote(map: NodeMap): string {
+  const locations = `across ${formatCount(map.points.length)} locations`;
+  if (map.placedNodes === null || map.placedNodes >= map.totalNodes) {
+    return locations;
+  }
+  return `${formatCount(map.placedNodes)} of them placed, ${locations}`;
 }
 
 /* ------------------------------------------------------------------- rail --- */
@@ -251,7 +361,7 @@ function Stat({
  * "How the score is built" explains a model none of these figures feed, so it
  * has nothing to say here. What a reader needs instead is where each number
  * came from and how much of the universe it covers — because the coverage
- * varies enormously, from about half for gas down to two chains for node maps,
+ * varies enormously, from about half for gas down to nine chains for node maps,
  * and a screen that hid that would read as far more complete than it is.
  */
 export function DeveloperSources({

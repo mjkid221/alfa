@@ -571,7 +571,7 @@ a filter by virtual machine. None of it feeds the score.
 | Monthly active developers | Electric Capital | 45 of 85 |
 | Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
 | Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
-| Node locations | bitnodes, and Solana's own cluster | 2 of 85 |
+| Node locations | bitnodes, Stakewiz, BitCtrl and five chains' own endpoints | 9 of 85 |
 
 Coverage varies enormously, so every panel states its own rather than implying
 completeness.
@@ -587,9 +587,25 @@ would mean nothing. And improvement proposals are a verified per-chain registry,
 because no aggregator covers them — Boardroom and Tally both want a key.
 
 The globe draws one point per **distinct location**, not per node: Bitcoin's
-26,566 nodes collapse to about 3,300 coordinates, because a datacentre rack is
+26,400 nodes collapse to about 3,300 coordinates, because a datacentre rack is
 one place however many machines are in it. There is no basemap — at that density
-the nodes draw the continents themselves.
+the nodes draw the continents themselves. Where a source can count what sits at a
+location, the mark is sized by it, by area.
+
+You can turn it: drag to rotate on both axes, wheel or pinch to zoom, hover a
+mark to name the place and its hosting provider, and click a country beside it to
+swing the globe round to that country and light its nodes. The country list is
+the keyboard route to the same thing, and the globe itself takes arrow keys. It
+rotates gently until you touch it, then it is yours; `Home` gives it back. With
+reduced motion set it never moves on its own — and then it draws exactly one
+frame, where the old version redrew the same image sixty times a second.
+
+The counts are not all in the same unit, so each globe names its own: 26,400
+Bitcoin **nodes**, 196 Monad **validators**, Hedera's 25 **council nodes** — which
+is its entire consensus layer, not a sample. Nine chains can be placed and one of
+them is a favour: Monad publishes nothing, so its validators are read from
+BitCtrl's public dashboard and labelled as that third party's measurement rather
+than the chain's own data. Ethereum still cannot be placed at all.
 
 **One rule changed.** Gas needs a node, and public endpoints answer for 39 of the
 41 EVM chains but not reliably for the rest, so `ALCHEMY_API_KEY` is an optional

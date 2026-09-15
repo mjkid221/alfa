@@ -184,14 +184,35 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
   Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
   and never read a README. Verify any new entry live before adding it.
-- Node locations exist for **two** chains. bitnodes' `?field=coordinates` gives
-  3,344 distinct locations in 62 KB; its full snapshot is 2.8 MB and carries **no
-  coordinates at all**. Solana's `getClusterNodes` IPs are deduplicated to /24
-  subnets before geolocating, turning 39 ip-api batches into 11. Monad's
-  validator maps are third-party dashboards with no API, and its RPC answers
-  `Method not found`.
+- Node locations exist for **nine** chains, not the two first found — the
+  registry and the rejections are in `domain/chain-tech.ts`. Five need no
+  geolocation: bitnodes (`?field=coordinates`, 3,325 **distinct** coordinates in
+  62 KB, with no duplicates, so no per-location counts exist; its full snapshot
+  is 2.8 MB and its rows carry five fields and **no geography at all**),
+  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, and BitCtrl
+  for Monad. Four are geolocated from addresses: Avalanche `info.peers`,
+  TronGrid `listnodes` (hosts are **hex-encoded ASCII**), XRPScan, and Hedera's
+  mirror node.
+- **ip-api allows 15 batch requests a minute, not 45.** 45 is its single-address
+  limit; the batch endpoint counts down in `X-Rl` and resets after `X-Ttl`. Tron
+  alone needs twelve batches, so `node-map.ts` waits on those headers — a
+  swallowed 429 silently costs a hundred subnets, which is how Avalanche came
+  back empty while Tron, fetched first, came back whole.
+- **Cosmos `net_info` is reachable** (publicnode, cosmos.directory), contrary to
+  what this file used to say. It is still unused for a better reason: it returns
+  one node's peer list, not a census — Osmosis 58, Injective 63, Kava 9.
+  Ethereum genuinely has nothing: ethernodes does not resolve, nodewatch and
+  monitoreth serve empty SPA shells, MigaLabs is Cloudflare-gated.
+- Monad publishes nothing of its own — its RPC still answers `Method not found`.
+  Its 196 validators are read from BitCtrl's `/geo` page, which its robots.txt
+  allows, and the payload is flagged `observed` so the panel can say whose
+  measurement it is. Validate structurally and return null; it will break.
 - `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
   published APIs. First thing to check if a developer panel goes blank.
+- A canvas sized in pixels inside a grid item deadlocks on resize: the item's
+  `min-width: auto` is the canvas's own width, so `useMeasure` keeps reporting
+  the old size and it never shrinks. `NodeGlobe`'s wrapper needs `min-w-0`, and
+  only a 1440 → 390 *resize* reveals it — a fresh load at 390 is fine.
 - Wrapping a grid item in another element loses `min-width: auto`'s constraint:
   `ModeSwap` needed `min-w-0` or each wrapper took its content's intrinsic width
   — 1,448px inside a 390px phone. And `overflow: clip` does **not** stop a

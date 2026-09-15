@@ -11,8 +11,9 @@ import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
  * read. It is prefetched on the home page like `chains.list`.
  *
  * `nodeMap` is deliberately separate and never prefetched. It is thousands of
- * coordinates for the two chains that publish them, wanted only when a globe is
- * on screen — the same contract `chains.tokenomics` documents.
+ * coordinates for the nine chains whose locations can be established, wanted
+ * only when a globe is on screen — the same contract `chains.tokenomics`
+ * documents.
  */
 export const developerRouter = createTRPCRouter({
   list: publicProcedure.query(() => getDeveloperDataset()),

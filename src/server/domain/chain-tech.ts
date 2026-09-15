@@ -15,6 +15,8 @@
  * in `aggregate.ts`.
  */
 
+import type { GlobeChain } from "~/lib/globe-chains";
+
 /* ------------------------------------------------------------ vm family ---- */
 
 /**
@@ -346,5 +348,53 @@ export const VALIDATOR_SOURCE: Record<string, ValidatorSource> = {
   dYdX: { kind: "cosmos", lcd: "https://dydx-rest.publicnode.com" },
 };
 
-/** Chains whose node locations are published. Nobody else's are. */
-export const NODE_MAP_CHAINS = ["Bitcoin", "Solana"] as const;
+/**
+ * Where each chain's node locations come from.
+ *
+ * Nine chains, swept live on 15 September 2026. The earlier finding — "only two
+ * chains publish this" — was simply too weak a search: five of these nine hand
+ * back coordinates directly and need no geolocation at all.
+ *
+ * Adding a tenth chain is one entry here. It used to be four edits in three
+ * files, two of which had to agree and nothing checked that they did.
+ *
+ * ## What was looked at and rejected
+ *
+ *   • **Ethereum** — still nothing. ethernodes' API host does not resolve,
+ *     nodewatch.io and monitoreth.io serve empty SPA shells with no JSON route,
+ *     and MigaLabs sits behind Cloudflare (403).
+ *   • **Cosmos `net_info`** — reachable after all, via publicnode and
+ *     cosmos.directory, contrary to what this file used to claim. Rejected on
+ *     better grounds: it returns *one node's peer list*, not a census — Osmosis
+ *     58, Injective 63, Provenance 12, THORChain 10, Kava 9. A nine-dot "Kava
+ *     node map" would be a lie told in pixels.
+ *   • **Cardano** — Koios relays are mostly DNS names, needing per-pool
+ *     resolution across ~3,000 pools.
+ *   • **Near** — `network_info` returns that node's ~40 active peers only.
+ *   • **Aptos** — the validator set's `network_addresses` really does carry
+ *     reachable hostnames (`node-l1-aptos-vn-cm.nodeswift.cloud`), but reaching
+ *     them means 150+ DNS resolutions. Worth revisiting.
+ *   • **Sui** — deprecated the JSON-RPC that served it.
+ */
+export type NodeMapSource =
+  | { kind: "bitnodes" }
+  | { kind: "stakewiz" }
+  | { kind: "bitctrl-monad" }
+  | { kind: "icp" }
+  | { kind: "stellar" }
+  | { kind: "avalanche" }
+  | { kind: "tron" }
+  | { kind: "xrpl" }
+  | { kind: "hedera" };
+
+export const NODE_MAP_SOURCE: Record<GlobeChain, NodeMapSource> = {
+  Bitcoin: { kind: "bitnodes" },
+  Solana: { kind: "stakewiz" },
+  Monad: { kind: "bitctrl-monad" },
+  "Internet Computer": { kind: "icp" },
+  Stellar: { kind: "stellar" },
+  "Avalanche C-Chain": { kind: "avalanche" },
+  Tron: { kind: "tron" },
+  Ripple: { kind: "xrpl" },
+  Hedera: { kind: "hedera" },
+};
