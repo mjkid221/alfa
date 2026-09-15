@@ -29,8 +29,13 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** Ease-out expo: fast departure, long settle. Matches `--ease-standard`. */
-function easeOutExpo(t: number): number {
+/**
+ * Ease-out expo: fast departure, long settle. Matches `--ease-standard`.
+ *
+ * Exported so canvas motion and CSS motion are literally the same curve rather
+ * than two approximations of it — the globe's fly-to eases on this. @public
+ */
+export function easeOutExpo(t: number): number {
   return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
 }
 

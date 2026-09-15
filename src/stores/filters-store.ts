@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { useEffect } from "react";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
@@ -9,11 +10,12 @@ import {
   type Filters,
   type LayerFilter,
 } from "~/components/filters";
+import { VM_FAMILIES, type ScreenMode, type VmFilter } from "~/lib/screen-mode";
 import type { CapBasis } from "~/lib/valuation-basis";
 
 /**
- * The screen's configuration — filters, sort and valuation basis — kept across
- * refreshes.
+ * The screen's configuration — mode, filters, sort and valuation basis — kept
+ * across refreshes.
  *
  * A zustand store with the `persist` middleware, in localStorage under
  * `par.filters`. Two decisions worth stating:
@@ -55,14 +57,31 @@ export const DEFAULT_BASIS: CapBasis = "circulating";
 
 const BASES: readonly CapBasis[] = ["circulating", "diluted"];
 
+/**
+ * Research is the default and stays the default. It is the lens the app is
+ * named for, and the one the methodology and every published figure describe.
+ */
+export const DEFAULT_MODE: ScreenMode = "research";
+
+const MODES: readonly ScreenMode[] = ["research", "developer"];
+
+/** Developer mode's only filter. The presets are valuation ideas and do not apply. */
+export const DEFAULT_VM: VmFilter = "any";
+
 interface FiltersState {
   filters: Filters;
   sort: TableSort;
   /** Which supply the whole screen prices chains on. */
   basis: CapBasis;
+  /** Which question the screen is answering: valuation, or engineering. */
+  mode: ScreenMode;
+  /** Virtual-machine family, developer mode only. */
+  vm: VmFilter;
   setFilters: (next: Filters) => void;
   setSort: (next: TableSort | ((current: TableSort) => TableSort)) => void;
   setBasis: (next: CapBasis) => void;
+  setMode: (next: ScreenMode) => void;
+  setVm: (next: VmFilter) => void;
   reset: () => void;
 }
 
@@ -105,23 +124,50 @@ function sanitiseBasis(candidate: unknown): CapBasis {
     : DEFAULT_BASIS;
 }
 
+function sanitiseMode(candidate: unknown): ScreenMode {
+  return MODES.includes(candidate as ScreenMode)
+    ? (candidate as ScreenMode)
+    : DEFAULT_MODE;
+}
+
+/**
+ * Rehydrate the persisted store, once, after mount.
+ *
+ * `skipHydration` is on so the server-rendered defaults and the first client
+ * render agree, which means **every page that reads this store has to ask for
+ * hydration**. Only the home screen did, so a chain page opened directly read
+ * the defaults forever: the mode switch in the bar said research while
+ * localStorage said developer, and the page believed the wrong one.
+ */
+export function useRehydrateFilters(): void {
+  useEffect(() => {
+    void useFiltersStore.persist.rehydrate();
+  }, []);
+}
+
 export const useFiltersStore = create<FiltersState>()(
   persist(
     (set) => ({
       filters: DEFAULT_FILTERS,
       sort: DEFAULT_SORT,
       basis: DEFAULT_BASIS,
+      mode: DEFAULT_MODE,
+      vm: DEFAULT_VM,
       setFilters: (next) => set({ filters: next }),
       setSort: (next) =>
         set((state) => ({
           sort: typeof next === "function" ? next(state.sort) : next,
         })),
       setBasis: (next) => set({ basis: next }),
+      setMode: (next) => set({ mode: next }),
+      setVm: (next) => set({ vm: next }),
       reset: () =>
         set({
           filters: DEFAULT_FILTERS,
           sort: DEFAULT_SORT,
           basis: DEFAULT_BASIS,
+          mode: DEFAULT_MODE,
+          vm: DEFAULT_VM,
         }),
     }),
     {
@@ -132,7 +178,8 @@ export const useFiltersStore = create<FiltersState>()(
       // v3: adds the valuation basis. `sanitiseBasis` already falls back to
       // circulating for a payload that has no `basis`, so the bump exists to
       // make the shape change explicit rather than to rewrite anything.
-      version: 3,
+      // v4: adds the screen mode. v5: adds developer mode's VM filter.
+      version: 5,
       migrate: (persisted, version) => {
         const saved = (persisted ?? {}) as {
           filters?: Record<string, unknown>;
@@ -151,15 +198,28 @@ export const useFiltersStore = create<FiltersState>()(
         filters: { ...state.filters, query: "" },
         sort: state.sort,
         basis: state.basis,
+        mode: state.mode,
+        vm: state.vm,
       }),
       merge: (persisted, current) => {
         const saved = persisted as
-          { filters?: unknown; sort?: unknown; basis?: unknown } | undefined;
+          | {
+              filters?: unknown;
+              sort?: unknown;
+              basis?: unknown;
+              mode?: unknown;
+              vm?: unknown;
+            }
+          | undefined;
         return {
           ...current,
           filters: sanitise(saved?.filters),
           sort: sanitiseSort(saved?.sort),
           basis: sanitiseBasis(saved?.basis),
+          mode: sanitiseMode(saved?.mode),
+          vm: VM_FAMILIES.includes(saved?.vm as VmFilter)
+            ? (saved?.vm as VmFilter)
+            : DEFAULT_VM,
         };
       },
     },

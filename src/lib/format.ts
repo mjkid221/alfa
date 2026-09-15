@@ -66,6 +66,96 @@ export function formatPrice(value: number | null | undefined): string {
   )}`;
 }
 
+/** A gas price and the unit it is quoted in. */
+export interface GasFigure {
+  /** The number alone, already separated and rounded. "—" when unknown. */
+  value: string;
+  /** "wei" or "gwei", or null where there is no figure to give a unit to. */
+  unit: "wei" | "gwei" | null;
+}
+
+/** Below this many gwei, a price reads better in wei. 0.001 gwei is 1,000,000 wei. */
+const WEI_BELOW = 0.001;
+
+/**
+ * A gas price, in whichever of wei and gwei keeps it readable.
+ *
+ * Measured across the 42 chains that answer a node: prices span **eleven orders
+ * of magnitude**, from Gnosis Chain's 0.000000009 gwei to Hedera's 1,110. One
+ * unit cannot serve that range. Quoting everything in gwei gave "9.0e-9", and
+ * spelling it out gives "0.000000009" — both unreadable in a table column, and
+ * the exponent form is worse because it also changes notation halfway through
+ * the leader card's count-up animation.
+ *
+ * So the unit is chosen per figure, from the two that anyone writing EVM code
+ * already knows. kwei and mwei would make every value one to three digits, but
+ * almost nobody reads them fluently, which is a poor trade for four characters.
+ *
+ *   Gnosis Chain        9 wei       Monad       102 gwei
+ *   Scroll        120,108 wei       Celo      202.5 gwei
+ *   MegaETH         0.001 gwei      Hedera    1,110 gwei
+ *
+ * The unit comes back separately rather than baked into the string so a caller
+ * animating the number can fix the unit once from the settled value and never
+ * change it mid-flight. Sorting must use the raw number, never this.
+ */
+export function formatGas(value: number | null | undefined): GasFigure {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return { value: "—", unit: null };
+  }
+  if (value <= 0) return { value: "0", unit: "gwei" };
+
+  if (value < WEI_BELOW) {
+    // Wei are indivisible, so this is a true integer count and rounding it is
+    // exact rather than a display choice — which also clears the float dust
+    // that dividing by 1e9 left behind (9e-9 gwei arrives as 9.000000000000002).
+    return {
+      value: formatInteger(Math.round(value * 1e9)),
+      unit: "wei",
+    };
+  }
+
+  // Four significant digits at and above 1 gwei, so Celo's 202.5 keeps its half
+  // and Polygon's 279.992962278 becomes 280; two below it, because a rollup
+  // quoting 0.001001463 is quoting noise — the figure moves every block, and
+  // "0.001" says everything the fourth digit was pretending to.
+  const rounded = Number(value.toPrecision(value >= 1 ? 4 : 2));
+  return {
+    value: rounded.toLocaleString("en-US", { maximumFractionDigits: 6 }),
+    unit: "gwei",
+  };
+}
+
+/**
+ * Format a gas price the way `reference` is formatted — same unit, same
+ * decimals — so a figure counting up to `reference` cannot change shape on the
+ * way there.
+ *
+ * Both halves matter. Without the fixed unit the leader card's animation
+ * crosses the wei/gwei boundary and the label flips mid-flight. Without the
+ * fixed decimals the *string* still grows: four significant digits of 0.1234 is
+ * six characters where the 202.5 it is heading for is five, so the number would
+ * push its own unit label sideways and then pull it back.
+ */
+export function formatGasLike(value: number, reference: number): string {
+  const settled = formatGas(reference);
+  if (settled.unit === null) return formatGas(value).value;
+  if (settled.unit === "wei") {
+    return formatInteger(Math.round(Math.max(0, value) * 1e9));
+  }
+  const decimals = (settled.value.split(".")[1] ?? "").length;
+  return Math.max(0, value).toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/** The same, as one string, for places with nowhere to put a separate unit. */
+export function formatGasWithUnit(value: number | null | undefined): string {
+  const gas = formatGas(value);
+  return gas.unit === null ? gas.value : `${gas.value} ${gas.unit}`;
+}
+
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value))
     return "—";

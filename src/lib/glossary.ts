@@ -250,6 +250,66 @@ export const GLOSSARY = {
       "multiple = all-time-high price ÷ current price. Implied cap = all-time-high price × today's supply.",
   },
 
+  virtualMachine: {
+    title: "Virtual machine",
+    short:
+      "The execution environment a chain runs — EVM, SVM, Move, Cairo — which decides what language you write contracts in.",
+    long: "It is the first thing that determines whether your existing code runs somewhere. An EVM chain takes Solidity and the whole Ethereum toolchain; Solana's SVM takes Rust; Move chains take Move.\n\nWhere L2Beat tracks the chain, this is their badge — a registry somebody else keeps current. Otherwise it is proven rather than assumed: **a chain that answers an Ethereum RPC is running an EVM**, which settled nine chains a hand-written table had missed. Only where neither applies does it fall back to a curated entry, and six of the newest chains have none at all.",
+  },
+
+  gasPrice: {
+    title: "Gas price",
+    short:
+      "What one unit of computation currently costs on the chain, read from a node on that chain.",
+    long: "This is the live number on this screen — it moves by the second, where most figures here move by the day. It is read directly from a node rather than an aggregator, because no aggregator publishes it.\n\nComparing it across chains needs care: a gwei is a billionth of the chain's own token, so a low gas price on an expensive token is not automatically cheap. Read it against the block gas limit for how much room there is, and against the token's price for what it actually costs.\n\nAbout 42 of the 85 chains answer a public node. The rest are either not EVM or publish no reachable endpoint, and show nothing rather than a guess.\n\nThe unit changes with the figure, because the figures span **eleven orders of magnitude**: Gnosis Chain quotes 9 wei where Hedera quotes 1,110 gwei. One unit for all of them would mean either scientific notation or a column of leading zeros, so each row is quoted in whichever of wei and gwei keeps it short, and says which.",
+  },
+
+  gasLimit: {
+    title: "Block gas limit",
+    short:
+      "How much computation fits in one block, and how much of the last block was used.",
+    long: "The limit is the ceiling on a single block; the fullness figure beside it is how much of that ceiling the most recent block actually consumed. Together they say whether a chain has headroom or is running hot.\n\nSome chains have no meaningful limit and report a placeholder instead — Arbitrum returns 2^50, which is a sentinel rather than a ceiling. Those are shown blank, because printing 1.1 quadrillion gas would be worse than printing nothing.",
+  },
+
+  contractSize: {
+    title: "Contract size limit",
+    short:
+      "The largest contract that can be deployed, in bytes of compiled bytecode.",
+    long: "EIP-170 capped deployed contracts at 24,576 bytes in 2016, to stop a single enormous contract making every node that reads it do unbounded work. Almost every EVM chain inherited the rule unchanged, which is why the column looks so uniform — 47 of the 48 EVM chains here sit at exactly that number.\n\nThe exception is **Arbitrum at 49,152 bytes**, twice the ceiling, because its fee model does not price bytecode the way mainnet's does and so the reason for the original limit does not bite in the same way.\n\nIt matters more than a constant sounds: it is the reason large protocols are split across several contracts and behind proxies, and hitting it is a routine, irritating part of shipping on an EVM chain.\n\nUnlike everything else in developer mode this is **not a measurement**. No RPC method returns it — it is a protocol constant, read from each chain's specification rather than from a node, which is why it is the one figure here that is curated rather than fetched.",
+  },
+
+  rollupStage: {
+    title: "Rollup stage",
+    short:
+      "L2Beat's ladder for how much of a rollup's security still depends on its operator.",
+    long: "**Stage 0** means training wheels fully on: the operator can upgrade the system, and users depend on that operator behaving. **Stage 1** introduces a working fraud or validity proof and a security council, so the chain can be challenged rather than merely trusted. **Stage 2** means the proof system is the authority and upgrades are constrained — the point at which a rollup is governed by its code rather than its team.\n\nThe number is not a score, and a high stage does not make a chain a better place to deploy. It says one specific thing: what would happen to your contract's state if the operator turned hostile or simply disappeared.\n\nIt applies only to rollups. An L1 secures itself with its own validator set, which is what the Nakamoto coefficient measures instead, so the column is blank rather than zero for them — a blank meaning inapplicable, not unknown.",
+  },
+
+  devActivity: {
+    title: "Monthly active developers",
+    short:
+      "How many people committed code to the chain's ecosystem in the last month, from Electric Capital.",
+    long: "Counted by Electric Capital, who maintain the mapping from ecosystem to repositories. That mapping is the whole point: counting commits against a chain's advertised GitHub org gets the largest chains badly wrong, because orgs move — Polygon's last pushed in January 2026 and Solana's in March 2025, so both would read as abandoned.\n\nThe figure splits into developers who work only on this chain and those who also work elsewhere, which is the difference between a resident community and passing traffic.\n\nCovers 45 of the 85 chains; the rest are too new or too small to be tracked as ecosystems.",
+    example:
+      "Ethereum 7,457 · Solana 2,321 · Base 1,176 · Monad 175, as of September 2026.",
+  },
+
+  nakamoto: {
+    title: "Nakamoto coefficient",
+    short:
+      "The smallest number of validators who would have to collude to halt the chain.",
+    long: "Formally, the fewest parties controlling more than a third of consensus weight — a third being the threshold at which a Byzantine-fault-tolerant chain can no longer finalise blocks. Higher is more decentralised. A coefficient of 2 means two operators could stop it.\n\nIt is **computed here from each chain's own validator set**, not collected from a tracker. That matters because the definition varies: nakaflow.io publishes 10 for Solana where summing stake to a third gives 18. Both are defensible, and a column mixing them would mean nothing — so one definition is applied everywhere and the chain's own endpoint is the source.\n\n**What counts as one party differs, and the figure says which.** Most chains weigh staked balance per validator. Three do not: MultiversX allots a fixed 3,200 validator seats and weighs an operator by how many it holds; Cardano's is per pool *operator* rather than per pool, so an exchange running twenty pools is one party, not twenty; and Tron's is the 27 elected super representatives, who are the only accounts that produce blocks.\n\n20 of the 85 chains publish a validator set reachable without a key. Ethereum is the notable absence — its beacon chain has over a million validators, so the only meaningful unit is the operator behind them, and no keyless source publishes that attribution. Sui has deprecated the JSON-RPC that served it and THORChain's public nodes are all down, so both show nothing rather than a stale figure.",
+    formula:
+      "Sort parties by consensus weight, descending. Count how many it takes for the running total to pass a third of the whole.",
+  },
+
+  nodeGeography: {
+    title: "Node locations",
+    short:
+      "Where the machines running a chain physically sit, one point per distinct location.",
+    long: "A point is a **location, not a node**. Bitcoin's 26,500 nodes collapse to about 3,300 coordinates, because a datacentre rack is one place however many machines are in it. Where a source can count what sits at a location, the mark is sized by it — by area, so the figure is read from the disc rather than from its radius — and the largest few carry the count as a number.\n\nEleven chains can be placed, and not the same way. Six publish coordinates outright: Bitcoin's crawler, ChainSafe's for Ethereum, Stakewiz for Solana's validators, the Internet Computer's own datacentre register, Stellar's network radar, and — for Monad — **a third party's measurement rather than the chain's own data**, since Monad publishes none. Four announce addresses instead, which are grouped into network blocks and located: Avalanche, Tron, Ripple and Hedera. Aptos is the odd one: it publishes hostnames rather than addresses, which are resolved before they can be placed, and 20 of its 84 validators advertise a form that cannot be read.\n\nThe counts are not all in the same unit, so each globe names its own — 26,500 Bitcoin **nodes** against 196 Monad **validators** against Hedera's 25 **council nodes**, which is its entire consensus layer rather than a sample of it. Ethereum's are **consensus-layer** nodes specifically: the execution layer is a different population, and the crawler that counts it publishes no coordinates. Where a lookup fails, the panel says how many it managed to place rather than quietly dropping them.\n\nThe land beneath the points is a basemap, not data. It is there because at twenty points a globe without one reads as scattered dots, with nothing to say whether a cluster is in Virginia or in the Atlantic.\n\nIt measures reachable machines, not stake. A chain can be spread across thirty countries and still be concentrated in who produces blocks — that is what the Nakamoto coefficient is for — and it can be spread across thirty countries while half of it runs on one company's hardware, which is what the hosting list is for. Selecting a provider there joins its locations on the globe, because that concentration is the one relationship in this data worth drawing. Hedera is the clearest case: 25 nodes in seven countries, and 52% of them at Amazon.",
+  },
+
   newsCategory: {
     title: "What kind of news",
     short:

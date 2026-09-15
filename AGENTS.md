@@ -51,9 +51,15 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
    nothing from `market*`. Fear & Greed, altcoin season, rainbow, cycles and
    flows are shown, never scored. Check with
    `grep -n "market-" src/server/domain/score.ts src/server/domain/aggregate.ts`.
-2. **Every source is free and keyless.** No paid tiers, no API keys beyond the
-   optional Upstash Redis. DefiLlama's bridges API, CoinGecko history beyond
-   365 days and total-market-cap history are paid; do not reintroduce them.
+2. **Every source is free, and keyless wherever possible.** No paid tiers.
+   Two optional keys exist and the app degrades without either: Upstash Redis,
+   and `ALCHEMY_API_KEY` for developer mode's gas readings. Alchemy is a
+   **fallback only** — public RPCs answer for 39 of the 41 EVM chains, so the
+   key serves the handful that are unreliable, and unset the feature falls back
+   to public endpoints. Everything else stays keyless: Boardroom (401) and Tally
+   were rejected for governance on exactly this ground. DefiLlama's bridges API,
+   CoinGecko history beyond 365 days and total-market-cap history are paid; do
+   not reintroduce them.
 3. **Every source is optional.** A failed or slow upstream yields `null` and a
    `degraded`/`unavailable` status, never a thrown page. Sources carry
    deadlines (`deadline()` in `server/lib/http.ts`) so an SSR prefetch never
@@ -156,6 +162,223 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   only titles that name the chain via `NEWS_ALIASES`; ten chains legitimately go
   to zero. Match on word boundaries — `near` otherwise hits "climbs near $65,000"
   and `ton` hits "Washington".
+- Developer mode runs beside the snapshot, never inside it: gas moves by the
+  second where the snapshot is cached for five minutes. `domain/developer.ts`
+  joins five sources at read time and `score.ts` sees none of them.
+- Gas: `chainid.network/chains.json` maps DefiLlama's `chainId` to public RPC
+  lists. 39 of 41 EVM chains answer the first endpoint; **walk the list**, since
+  Ethereum's first entry is dead while publicnode's works. **Arbitrum reports a
+  2^50 gas limit** — a sentinel, not a ceiling, and it must never render.
+- Developer counts come from `developerreport.com/api/charts/dev_mau/{eco}`
+  (Electric Capital), keyless, 45 of 85 chains, unknown ecosystems return **500**
+  not 404. Use this rather than GitHub: they maintain the ecosystem-to-repo
+  mapping, which is what counting a chain's own org gets wrong (Polygon's last
+  pushed January 2026, Solana's March 2025).
+- Nakamoto is **computed** from each chain's own validator set, never collected:
+  nakaflow.io says 10 for Solana where summing stake to a third gives 18. One
+  definition everywhere — sort the weights, count until the running total passes
+  a third. **20 chains**, up from 8.
+- **The other twelve came out of nakaflow's source, not its dashboard.**
+  ChainflowSOL's calculator was treated as a rival number for months when its
+  real value is its *endpoint list*, and almost all of it is keyless. Nine came
+  straight from there — Monad, Avalanche, BNB Chain, Polygon PoS, Hyperliquid,
+  MultiversX, Algorand, Cardano, Hedera — and three from following the same idea
+  into sources this app already talks to: Provenance is one more Cosmos LCD,
+  Tron's 27 super representatives come from TronGrid beside the endpoint the
+  node map uses, and Tezos' bakers from tzkt. The lesson is the nodewatch one
+  again: read the thing, do not judge it by its front page.
+- **Monad's validator set is on Monad**, in the staking precompile at
+  `0x…1000`. `eth_call` with selector `fb29b729` pages the validator ids (100 a
+  page, `[done, next, offset, length, …ids]`) and `2b6d639a` returns a struct
+  whose **seventh word is the stake**. 196 validators, which is what gmonads and
+  BitCtrl independently observe. It costs one call per validator, so **retry**:
+  a first pass without backoff lost 17 to rate limiting and reported 17 instead
+  of 20, and a dropped validator silently *lowers* the coefficient.
+- **Weight is not always stake, and the figure has to say so.** `VALIDATOR_UNIT`
+  carries what one party is. MultiversX weighs identities by how many of a fixed
+  3,200 validator *seats* they hold; Cardano's rows are pool **operators**, not
+  pools, which is the more faithful reading of "parties who would have to
+  agree" since an exchange's twenty pools are one party; Tron counts the 27
+  elected super representatives by the votes behind them. The chain page's
+  labels are driven by this field — never hard-code "validators".
+- **Still absent, and why** (checked 16 September 2026): **Ethereum** needs a
+  key — nakaflow uses Rated Network, and the reason is structural, since a
+  million beacon-chain validators make the operator the only meaningful unit and
+  that attribution is what Rated sells. **Sui**'s `suix_getLatestSuiSystemState`
+  still answers "JSON-RPC on public fullnodes has been deprecated" — nakaflow
+  lists Sui and calls that method, so its figure runs on a dead endpoint.
+  **THORChain**: four thornode hosts tried, two do not resolve, one 403s, one
+  503s. **PulseChain** publishes individual 32-PLS deposit balances a month
+  stale, which would count deposits rather than operators. **Single-sequencer
+  rollups**: nakaflow hardcodes Base to 1, which is arithmetically right and is
+  not a measurement — it stays out of a computed column, and `stage` carries it.
+- **tzkt flattens a single `select`.** `?select=stakingBalance` returns
+  `[12996315238, …]`, not `[{stakingBalance: …}]`. Read as objects every baker
+  weighed zero, `nakamotoOf` correctly discarded them all, and Tezos went
+  *missing* rather than wrong — the failure mode that does not announce itself.
+- Improvement proposals have no aggregator. `domain/chain-tech.ts` is a verified
+  per-chain registry: 32 GitHub repos (Monad's is `monad-crypto/MIPs`, directory
+  `MIPs`, case-sensitive) and 17 Discourse forums, whose `/latest.json` is
+  keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
+  Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
+  and never read a README. Verify any new entry live before adding it.
+- **Monad's globe pulses live, and the join took three endpoints to find.** A
+  block's `miner` is an address, and **neither validator key derives to it** —
+  `node_id` and `secp` are both valid secp256k1 points but they are network and
+  consensus keys, and the addresses they produce match no proposer. The link is
+  `auth_address` on gmonads' `epoch_validators`, joined to `geolocations` on
+  `node_id`. The epoch is circular: `epoch_validators` rejects an epoch that is
+  not near-current while `geolocations` ignores the argument and stamps the real
+  one on every row, so read it from there first.
+- **Only about a quarter of Monad's blocks can be placed.** Measured over 60
+  consecutive blocks: 45 distinct proposers, of which 11 were registered under
+  an `auth_address` — and all 11 had a location. So the gap is not geolocation,
+  it is that most proposers sign with an address they have not registered.
+  gmonads shows every proposer because they read it from their own node's
+  stream. Do not "improve" the rate by guessing; the readout states the limit.
+- **Most chains cannot be mapped, and it is not a coverage failure.** Counted
+  against the 85: **24 are L2s with a single sequencer**, so no validator set
+  exists to map; **Cosmos-SDK chains hide validators behind sentry nodes** by
+  design, since publishing a validator's IP invites the DDoS the architecture
+  exists to prevent; and a further group publishes **identity without location**
+  — verified live, Hyperliquid's 35 validators carry name, stake and commission
+  but no address, MultiversX's node list carries bls key and shard but no
+  address, Near's 421 validators have no address field at all. Twelve is close
+  to the ceiling, not an interim number. Do not go looking again without a new
+  kind of source.
+- Node locations exist for **twelve** chains, not the two first found — the
+  registry and the rejections are in `domain/chain-tech.ts`. Six need no
+  geolocation: bitnodes (`?field=coordinates`, 3,325 **distinct** coordinates in
+  62 KB, with no duplicates, so no per-location counts exist; its full snapshot
+  is 2.8 MB and its rows carry five fields and **no geography at all**),
+  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, gmonads for
+  Monad, and ChainSafe nodewatch for Ethereum. Four are geolocated from
+  addresses: Avalanche `info.peers`, TronGrid `listnodes` (hosts are
+  **hex-encoded ASCII**), XRPScan, and Hedera's mirror node.
+- **Aptos and Flow publish hostnames, not addresses**, so both go through
+  `resolveHost` (DNS-over-HTTPS, keyless, works on any runtime). Flow's come
+  from a **Cadence script** run against `FlowIDTableStaking` through the public
+  access REST API — base64 in, base64 JSON-Cadence out — returning all 312
+  staked nodes in one request.
+- **Ethereum was written off twice and should not have been.** `nodewatch.io`
+  is an empty SPA shell, but ChainSafe's crawler behind it still serves keyless
+  GraphQL at `nodewatch.chainsafe.io/query`: `getHeatmapData` returns latitude,
+  longitude, city and country per node — 7,137 nodes, 1,663 locations, 1,081
+  cities, and a daily series running to today. They are **consensus-layer**
+  nodes over discv5; the execution layer is a different population, counted by
+  Etherscan's node tracker at 11,848 across 63 countries but with no
+  coordinates, which is the fallback if nodewatch ever goes dark. The lesson is
+  to probe the API rather than judge the dashboard. nodewatch also classifies
+  each node hosting/residential/business/education (56% hosted), which is a
+  better concentration signal than ISP and is not modelled yet.
+- **Aptos publishes hostnames, not addresses.** `0x1::stake::ValidatorSet`'s
+  `network_addresses` is BCS-encoded and its bytes contain a readable name
+  (`val1.mainnet.aptos.p2p.org`); 70 of 84 validators yield one, and
+  `dns.google/resolve` turns them into addresses keylessly. It is the only
+  source needing a resolution step, and the 14 that decode to nothing are
+  reported through `placedNodes` rather than shrinking the total.
+- **ISP names fragment, and a concentration figure must not.** ip-api returned
+  Hedera's council as "Amazon Technologies Inc." 8, "Amazon.com, Inc." 3 and
+  "Amazon.com" 2, so "32% with one provider" should have read **52%**.
+  `normaliseHost` folds the hyperscalers by hand and strips legal suffixes;
+  extend `HOST_ALIASES` rather than inventing a cleverer rule.
+- **The 2^50 gas limit is a class, not an Arbitrum quirk.** Six chains return
+  exactly `0x4000000000000` — Arbitrum, zkSync Era, Abstract, Etherlink, Reya
+  and Robinhood Chain — which is Arbitrum Nitro and the zkSync stack. They carry
+  `limitIsSentinel` so the interface can say **"No cap"** rather than a dash,
+  because "this chain does not bound a block" and "we could not read it" are
+  opposite facts that a dash renders identically.
+- **Coverage counts live on the server**, in `DeveloperDataset.coverage`, and
+  the UI reads them. They used to be recomputed in three places and one was
+  wrong: a single row claimed the gas figure for the block limit too, which
+  overstates it by exactly those six chains. Gas answers for 42, a block limit
+  for 36.
+- **Contract size and rollup stage were collected and never drawn** for the
+  whole life of developer mode — fetched, typed, shipped to the browser, and
+  rendered by nothing. When adding a field to `DeveloperMetrics`, add the render
+  path in the same change or it will sit there.
+- **Contract size limits are measured, not assumed**, and the old table was
+  wrong in both directions: its only entry (Arbitrum at 49,152) is actually
+  24,576, and four chains do deviate — **Monad 131,072**, Celo 65,536, Polygon
+  PoS 32,768, Berachain 32,768. Measure with six bytes of initcode,
+  `PUSH3 <N> PUSH1 0 RETURN`, binary-searched through `eth_estimateGas` until
+  the chain answers "max code size exceeded". Two confounds: code deposit costs
+  200 gas a byte, so a node says "out of gas" long before "too big"; and some
+  nodes refuse a sender that is not a funded account. **A rejection is strong
+  evidence, an acceptance is weak** — a node may not enforce the rule in
+  estimation — so record a deviation only when a second endpoint agrees.
+  `contractSizeSource` marks the nine chains that refused the probe as assumed.
+- **Every page that reads the filters store must call `useRehydrateFilters()`.**
+  `skipHydration` is on so SSR and the first client render agree, and only
+  `Screen` was rehydrating — so a chain page opened directly read the defaults
+  forever, showing research mode while localStorage said developer.
+- **ip-api allows 15 batch requests a minute, not 45.** 45 is its single-address
+  limit; the batch endpoint counts down in `X-Rl` and resets after `X-Ttl`. Tron
+  alone needs twelve batches, so `node-map.ts` waits on those headers — a
+  swallowed 429 silently costs a hundred subnets, which is how Avalanche came
+  back empty while Tron, fetched first, came back whole.
+- **Cosmos `net_info` is reachable** (publicnode, cosmos.directory), contrary to
+  what this file used to say. It is still unused for a better reason: it returns
+  one node's peer list, not a census — Osmosis 58, Injective 63, Kava 9.
+  Ethereum genuinely has nothing: ethernodes does not resolve, nodewatch and
+  monitoreth serve empty SPA shells, MigaLabs is Cloudflare-gated.
+- Monad publishes nothing of its own — its RPC still answers `Method not found`.
+  Two third parties observe it and **agree** (196 validators, 54 cities, 30
+  countries), so both are used: **gmonads' JSON API** first
+  (`/api/geolocations?network=mainnet&epoch=<n>` — 76 KB with coordinates, city,
+  ISP, ASN and stake; the `epoch` is **required but ignored**, any value returns
+  the current one, and omitting it is a 400), falling back to scraping
+  BitCtrl's 2.6 MB `/geo` page. Both are flagged `observed`. Validate
+  structurally and return null; they will break.
+- The globe draws exactly one **relationship**: arcs joining the locations of a
+  selected hosting provider (`buildArcs`, slerp not lerp — linear interpolation
+  between two points on a sphere cuts through it). It exists because that
+  relationship is in the data. gmonads' arcs carry block propagation, which is
+  live data with no equivalent here, so do not add arcs for anything else.
+- The globe's land is a **2 KB bitmask**, not a coastline — `chart/land-mask.ts`
+  rasterises Natural Earth onto a 2° grid, 5,402 of 16,200 cells. It replaced
+  the claim that "the nodes draw the continents themselves", which held only for
+  Bitcoin: Hedera's 20 points read as noise without it. Regeneration script is
+  in the file's docblock.
+- `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
+  published APIs. First thing to check if a developer panel goes blank.
+- **The globe panel's height is pinned, because the rail used to set it.**
+  Measured at 1440px: 570px on Bitcoin, 659px on eight chains, 851px on Monad —
+  a 281px swing that moved everything below it every time the reader changed
+  chain. `GLOBE_HEIGHT` now fixes the grid row and caps the rail, and the source
+  line and live readout moved out of the rail into a full-width footer, being
+  the two pieces that varied most. 460 rather than 400 because the cap has to
+  clear the tallest rail (447px — Ripple, Flow and Aptos, whose totals run to a
+  second line) or it hides the host concentration sentence the list exists for.
+  Verified 26 samples across twelve chains, loading frames included: one
+  distinct height, swing 0.00.
+- **Reserve the footer as a real blank line, not a `min-height`.** Hanging the
+  footer row off `data` made the first paint 39.5px short; replacing it with
+  `min-h-[17px]` was still 10.5px out, because with `border-box` the height has
+  to cover the padding and border too. A `<p>` holding `&nbsp;` is exactly one
+  line by construction.
+- **`placeholderData` is silent on its own.** Keeping the previous chain's globe
+  while the next loads is right, but without `isPlaceholderData && isFetching`
+  driving a visible state the reader clicks Tron and watches Bitcoin for two
+  more seconds with no signal. Some of these sources take a while.
+- **A dash and "n/a" are different claims and the developer table now keeps
+  them apart.** Gas price, block limit, fullness and contract size are EVM
+  ideas, so 43 of the 85 carried four dashes that read exactly like a failed
+  fetch. Columns declare a `group` (`universal` / `evm` / `rollup`) and an
+  `applies` predicate; the group spans a second header row — "Any machine",
+  "EVM chains only", "Rollups only" — and a column that does not apply renders
+  "n/a". Groups must stay **contiguous** in the column list or the spanning
+  header splits. Narrowing the VM filter to a non-EVM family drops the EVM block
+  outright rather than printing four columns of "n/a" at a reader who just asked
+  for Cosmos chains.
+- A canvas sized in pixels inside a grid item deadlocks on resize: the item's
+  `min-width: auto` is the canvas's own width, so `useMeasure` keeps reporting
+  the old size and it never shrinks. `NodeGlobe`'s wrapper needs `min-w-0`, and
+  only a 1440 → 390 *resize* reveals it — a fresh load at 390 is fine.
+- Wrapping a grid item in another element loses `min-width: auto`'s constraint:
+  `ModeSwap` needed `min-w-0` or each wrapper took its content's intrinsic width
+  — 1,448px inside a 390px phone. And `overflow: clip` does **not** stop a
+  `shrink-0` child from adding to document scroll width; unmount it instead.
 - Social metrics: X's API is paid, `syndication.twitter.com` answers 429 on the
   first request, CoinGecko's free `community_data` is null and keyless GitHub
   allows 60 requests an hour. CoinPaprika `/v1/coins/{id}` carries follower,
