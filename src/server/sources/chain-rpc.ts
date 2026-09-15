@@ -89,6 +89,13 @@ export interface GasReading {
   gasPriceGwei: number | null;
   /** Block gas limit. Null where the chain does not meaningfully have one. */
   gasLimit: number | null;
+  /**
+   * True where `gasLimit` is null because the chain declared no ceiling, rather
+   * than because nothing could be read. The interface needs the difference:
+   * "this chain does not cap blocks" and "we could not find out" are not the
+   * same claim, and a bare dash says the second for both.
+   */
+  limitIsSentinel: boolean;
   /** How full the sampled block was, 0–100. */
   gasUsedPct: number | null;
   /** Which endpoint answered, so the figure can be traced. */
@@ -98,11 +105,28 @@ export interface GasReading {
 /**
  * A gas limit large enough to mean "no limit".
  *
- * Arbitrum reports 2^50. That is a sentinel, not a ceiling — its blocks are not
- * bounded the way mainnet's are — and rendering it as "1.1 quadrillion gas"
- * would be worse than rendering nothing.
+ * **Not an Arbitrum quirk.** Six chains return exactly 2^50 — Arbitrum, zkSync
+ * Era, Abstract, Etherlink, Reya and Robinhood Chain — which is Arbitrum Nitro
+ * and the zkSync stack rather than one chain being odd: neither bounds a block
+ * the way mainnet does, so both report a sentinel where the field is required.
+ * Verified against all six RPCs on 15 September 2026. Rendering it as
+ * "1.1 quadrillion gas" would be worse than rendering nothing.
+ *
+ * The threshold sits at 2^49 for headroom, which also suppresses any genuine
+ * limit above 562 trillion. No chain is within three orders of magnitude of it.
  */
 const SENTINEL_GAS_LIMIT = 2 ** 49;
+
+/** FNV-1a over the target list, so the cache key describes its contents. */
+function fingerprint(ids: readonly string[]): string {
+  let hash = 0x811c9dc5;
+  const joined = ids.join(",");
+  for (let i = 0; i < joined.length; i++) {
+    hash ^= joined.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${ids.length}-${hash.toString(36)}`;
+}
 
 const hexToNumber = (value: unknown): number | null => {
   if (typeof value !== "string" || !value.startsWith("0x")) return null;
@@ -179,6 +203,7 @@ async function readChain(
         })(),
         gasLimit:
           gasLimit === null || gasLimit >= SENTINEL_GAS_LIMIT ? null : gasLimit,
+        limitIsSentinel: gasLimit !== null && gasLimit >= SENTINEL_GAS_LIMIT,
         gasUsedPct:
           gasLimit && gasUsed !== null && gasLimit < SENTINEL_GAS_LIMIT
             ? (gasUsed / gasLimit) * 100
@@ -212,7 +237,12 @@ export function fetchGasReadings(targets: readonly GasTarget[]) {
     .sort();
 
   return cachedValue(
-    `rpc:gas:v1:${ids.length}`,
+    // Keyed on what the targets *are*, not how many there are. The fingerprint
+    // above was being computed and then thrown away in favour of `ids.length`,
+    // so two different universes of equal size shared one entry — and since the
+    // cached value is keyed by chain name, each would have served the other's
+    // readings and dropped its own.
+    `rpc:gas:v2:${fingerprint(ids)}`,
     { ttlSeconds: 60, staleSeconds: 900 },
     async (): Promise<Record<string, GasReading>> => {
       const registry: Record<number, string[]> = await fetchRpcRegistry().catch(

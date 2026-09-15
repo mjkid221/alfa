@@ -11,6 +11,7 @@ import {
 import { useMemo } from "react";
 
 import { AlphaMap, type AlphaPoint } from "~/components/chart/alpha-map";
+import { ChainDeveloper } from "~/components/chain-developer";
 import { ChainTokenomics } from "~/components/chain-tokenomics";
 import { NewsBadge } from "~/components/news/news-badge";
 import { OutletMark } from "~/components/news/outlet-mark";
@@ -716,6 +717,8 @@ export function ChainDetail({ slug }: { slug: string }) {
           symbol={chain.symbol}
           investable={chain.investable}
         />
+
+        <ChainDeveloper slug={chain.slug} name={chain.name} />
 
         {chainCorridors.length > 0 && (
           <Panel

@@ -57,7 +57,12 @@ export interface DeveloperDataset {
   /** Coverage, so the interface can state it rather than implying completeness. */
   coverage: {
     universe: number;
+    vm: number;
     gas: number;
+    /** Chains that answered *and* declared a block ceiling. Below `gas`. */
+    gasLimit: number;
+    contractSize: number;
+    stage: number;
     developers: number;
     decentralisation: number;
     proposals: number;
@@ -148,7 +153,14 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
     generatedAt: new Date().toISOString(),
     coverage: {
       universe: rows.length,
+      vm: rows.filter((r) => r.vm).length,
       gas: rows.filter((r) => r.gas).length,
+      // Deliberately not the same as `gas`: six chains answer a node and report
+      // a sentinel rather than a ceiling, so a single figure for "gas" would
+      // overstate how many have a block limit by exactly those six.
+      gasLimit: rows.filter((r) => r.gas?.gasLimit != null).length,
+      contractSize: rows.filter((r) => r.contractSizeLimit != null).length,
+      stage: rows.filter((r) => r.stage).length,
       developers: rows.filter((r) => r.developers).length,
       decentralisation: rows.filter((r) => r.decentralisation).length,
       proposals: rows.filter((r) => r.proposals).length,

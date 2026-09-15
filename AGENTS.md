@@ -184,7 +184,17 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
   Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
   and never read a README. Verify any new entry live before adding it.
-- Node locations exist for **eleven** chains, not the two first found — the
+- **Most chains cannot be mapped, and it is not a coverage failure.** Counted
+  against the 85: **24 are L2s with a single sequencer**, so no validator set
+  exists to map; **Cosmos-SDK chains hide validators behind sentry nodes** by
+  design, since publishing a validator's IP invites the DDoS the architecture
+  exists to prevent; and a further group publishes **identity without location**
+  — verified live, Hyperliquid's 35 validators carry name, stake and commission
+  but no address, MultiversX's node list carries bls key and shard but no
+  address, Near's 421 validators have no address field at all. Twelve is close
+  to the ceiling, not an interim number. Do not go looking again without a new
+  kind of source.
+- Node locations exist for **twelve** chains, not the two first found — the
   registry and the rejections are in `domain/chain-tech.ts`. Six need no
   geolocation: bitnodes (`?field=coordinates`, 3,325 **distinct** coordinates in
   62 KB, with no duplicates, so no per-location counts exist; its full snapshot
@@ -193,6 +203,11 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   Monad, and ChainSafe nodewatch for Ethereum. Four are geolocated from
   addresses: Avalanche `info.peers`, TronGrid `listnodes` (hosts are
   **hex-encoded ASCII**), XRPScan, and Hedera's mirror node.
+- **Aptos and Flow publish hostnames, not addresses**, so both go through
+  `resolveHost` (DNS-over-HTTPS, keyless, works on any runtime). Flow's come
+  from a **Cadence script** run against `FlowIDTableStaking` through the public
+  access REST API — base64 in, base64 JSON-Cadence out — returning all 312
+  staked nodes in one request.
 - **Ethereum was written off twice and should not have been.** `nodewatch.io`
   is an empty SPA shell, but ChainSafe's crawler behind it still serves keyless
   GraphQL at `nodewatch.chainsafe.io/query`: `getHeatmapData` returns latitude,
@@ -215,6 +230,21 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   "Amazon.com" 2, so "32% with one provider" should have read **52%**.
   `normaliseHost` folds the hyperscalers by hand and strips legal suffixes;
   extend `HOST_ALIASES` rather than inventing a cleverer rule.
+- **The 2^50 gas limit is a class, not an Arbitrum quirk.** Six chains return
+  exactly `0x4000000000000` — Arbitrum, zkSync Era, Abstract, Etherlink, Reya
+  and Robinhood Chain — which is Arbitrum Nitro and the zkSync stack. They carry
+  `limitIsSentinel` so the interface can say **"No cap"** rather than a dash,
+  because "this chain does not bound a block" and "we could not read it" are
+  opposite facts that a dash renders identically.
+- **Coverage counts live on the server**, in `DeveloperDataset.coverage`, and
+  the UI reads them. They used to be recomputed in three places and one was
+  wrong: a single row claimed the gas figure for the block limit too, which
+  overstates it by exactly those six chains. Gas answers for 42, a block limit
+  for 36.
+- **Contract size and rollup stage were collected and never drawn** for the
+  whole life of developer mode — fetched, typed, shipped to the browser, and
+  rendered by nothing. When adding a field to `DeveloperMetrics`, add the render
+  path in the same change or it will sit there.
 - **ip-api allows 15 batch requests a minute, not 45.** 45 is its single-address
   limit; the batch endpoint counts down in `X-Rl` and resets after `X-Ttl`. Tron
   alone needs twelve batches, so `node-map.ts` waits on those headers — a

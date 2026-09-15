@@ -24,6 +24,7 @@ export const GLOBE_CHAINS = [
   "Avalanche C-Chain",
   "Stellar",
   "Aptos",
+  "Flow",
   "Hedera",
 ] as const;
 

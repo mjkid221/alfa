@@ -22,6 +22,7 @@ import { cn } from "~/lib/cn";
 import {
   formatCount,
   formatGas,
+  formatInteger,
   formatGasWithUnit,
   formatMultiple,
   formatPercent,
@@ -63,7 +64,9 @@ type SortKey =
   | "gasUsedPct"
   | "devs"
   | "nakamoto"
-  | "vm";
+  | "vm"
+  | "contractSize"
+  | "stage";
 
 interface Column {
   key: SortKey;
@@ -399,11 +402,18 @@ export function ChainTable({
         align: "right",
         width: 148,
         value: (_chain, dev) => dev?.gas?.gasLimit ?? null,
-        render: (_chain, { dev }) => (
-          <span className="tnum text-[12.5px]">
-            {dev?.gas?.gasLimit ? formatCount(dev.gas.gasLimit) : "—"}
-          </span>
-        ),
+        render: (_chain, { dev }) =>
+          dev?.gas?.gasLimit ? (
+            <span className="tnum text-[12.5px]">
+              {formatCount(dev.gas.gasLimit)}
+            </span>
+          ) : dev?.gas?.limitIsSentinel ? (
+            // Said in words, because a dash here would mean the same as the dash
+            // on a chain whose node never answered — and they are opposite facts.
+            <span className="text-ink-muted text-[12.5px]">No cap</span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
       },
       {
         key: "gasUsedPct",
@@ -414,11 +424,56 @@ export function ChainTable({
         width: 120,
         value: (_chain, dev) => dev?.gas?.gasUsedPct ?? null,
         render: (_chain, { dev }) =>
-          dev?.gas?.gasUsedPct === null ||
-          dev?.gas?.gasUsedPct === undefined ? (
-            <span className="text-ink-faint text-[12.5px]">—</span>
-          ) : (
+          dev?.gas?.gasUsedPct !== null &&
+          dev?.gas?.gasUsedPct !== undefined ? (
             <PercentileBar value={dev.gas.gasUsedPct} width={64} />
+          ) : dev?.gas?.limitIsSentinel ? (
+            // Fullness is a fraction of the limit, so a chain without one has no
+            // fullness either — for the same reason, not a missing reading.
+            <span className="text-ink-muted text-[12.5px]">n/a</span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
+      },
+      {
+        key: "contractSize",
+        label: "Contract limit",
+        hint: "Largest contract that can be deployed, in bytes. A protocol constant, not a live reading.",
+        term: "contractSize",
+        align: "right",
+        width: 132,
+        value: (_chain, dev) => dev?.contractSizeLimit ?? null,
+        render: (_chain, { dev }) =>
+          dev?.contractSizeLimit ? (
+            // Written out, not abbreviated: 24,576 is a constant an EVM
+            // developer knows by sight, and "24.6KB" throws that away.
+            <span className="tnum text-[12.5px]">
+              {formatInteger(dev.contractSizeLimit)}
+              <span className="text-ink-faint ml-1 text-[10.5px]">B</span>
+            </span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
+          ),
+      },
+      {
+        key: "stage",
+        label: "Stage",
+        hint: "L2Beat's decentralisation ladder for rollups. Blank for chains it does not apply to.",
+        term: "rollupStage",
+        align: "left",
+        width: 116,
+        value: (_chain, dev) => {
+          // Sorted by how far up the ladder, so Stage 2 leads.
+          const match = /(\d)/.exec(dev?.stage ?? "");
+          return match ? Number(match[1]) : null;
+        },
+        render: (_chain, { dev }) =>
+          dev?.stage ? (
+            <span className="border-hairline text-ink-secondary rounded-full border px-1.5 py-0.5 text-[10.5px] tracking-wide uppercase">
+              {dev.stage}
+            </span>
+          ) : (
+            <span className="text-ink-faint text-[12.5px]">—</span>
           ),
       },
       {
@@ -906,7 +961,21 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
       />
       <MobileStat
         label="Block limit"
-        value={dev?.gas?.gasLimit ? formatCount(dev.gas.gasLimit) : "—"}
+        value={
+          dev?.gas?.gasLimit
+            ? formatCount(dev.gas.gasLimit)
+            : dev?.gas?.limitIsSentinel
+              ? "No cap"
+              : "—"
+        }
+      />
+      <MobileStat
+        label="Contract limit"
+        value={
+          dev?.contractSizeLimit
+            ? `${formatInteger(dev.contractSizeLimit)} B`
+            : "—"
+        }
       />
       <MobileStat
         label="Block full"

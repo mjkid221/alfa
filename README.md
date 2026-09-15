@@ -566,12 +566,15 @@ a filter by virtual machine. None of it feeds the score.
 
 | What | Where from | Covers |
 |---|---|---|
-| Gas price, block limit, block fullness | The chain's own node, via public RPC | 42 of 85 |
+| Gas price | The chain's own node, via public RPC | 42 of 85 |
+| Block gas limit and fullness | The same block the price came from | 36 of 85 |
+| Contract size limit | Each chain's own specification | 48 of 85 |
+| Rollup stage | L2Beat | 21 of 85 |
 | Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
 | Monthly active developers | Electric Capital | 45 of 85 |
 | Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
 | Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
-| Node locations | bitnodes, ChainSafe nodewatch, Stakewiz, gmonads and six chains' own endpoints | 11 of 85 |
+| Node locations | bitnodes, ChainSafe nodewatch, Stakewiz, gmonads and seven chains' own endpoints | 12 of 85 |
 
 Coverage varies enormously, so every panel states its own rather than implying
 completeness.
@@ -618,6 +621,17 @@ publishes hostnames rather than addresses, so they are resolved before they can
 be placed, and the 20 of 84 that cannot be read are reported rather than
 dropped.
 
+**Why twelve and not eighty-five.** It is not a coverage failure. 24 of the 85
+are L2s with a single sequencer, so there is no validator set to map — a Base
+globe would be one dot, which is better said in a sentence. Cosmos-SDK chains
+hide validators behind sentry nodes on purpose, because publishing a validator's
+IP invites exactly the attack that architecture exists to stop. And a third
+group publishes identity without location: Hyperliquid names its 35 validators
+and their stake but not where they are, and Near's 421 have no address field at
+all. Flow is the last one that could be added — its staking contract publishes a
+networking address on-chain, which a Cadence script returns for all 312 staked
+nodes at once.
+
 **Ethereum is here after being written off twice.** `nodewatch.io` is an empty
 shell, so it read as another dead crawler — but ChainSafe's crawler behind it
 still answers a keyless GraphQL query, coordinates and all: 7,137 nodes across
@@ -631,6 +645,14 @@ one company owns the hardware — Hedera's 25 council nodes sit in seven countri
 and 52% of them are at Amazon. That figure needed the provider names folding
 first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
 Inc." and "Amazon.com", which had been quietly reporting 32%.
+
+Every chain page now carries the same engineering view of that one chain: what
+it runs, what it charges, who runs it, and what is being proposed. That last one
+is the reason it exists — a chain's open proposals are titles and links, which
+cannot be a table cell, and they were being fetched and thrown away. So are the
+five years of monthly developer counts behind each sparkline, and two thirds of
+the decentralisation reading: the Nakamoto column shows the coefficient, but not
+that Solana has 676 validators and its largest holds 4.1% of stake.
 
 Click a provider and the globe draws it: great-circle arcs sweep out joining
 every location it runs, with a pulse travelling them while it stays selected.

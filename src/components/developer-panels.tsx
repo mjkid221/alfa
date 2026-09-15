@@ -11,7 +11,10 @@ import { formatCount } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { sequentialStep } from "~/lib/palette";
 import { api } from "~/trpc/react";
-import type { DeveloperMetrics } from "~/server/domain/developer";
+import type {
+  DeveloperDataset,
+  DeveloperMetrics,
+} from "~/server/domain/developer";
 import type { NodeMap } from "~/server/sources/node-map";
 
 /**
@@ -384,49 +387,72 @@ function Stat({
  * "How the score is built" explains a model none of these figures feed, so it
  * has nothing to say here. What a reader needs instead is where each number
  * came from and how much of the universe it covers — because the coverage
- * varies enormously, from about half for gas down to nine chains for node maps,
- * and a screen that hid that would read as far more complete than it is.
+ * varies enormously, from about half for gas down to twelve chains for node
+ * maps, and a screen that hid that would read as far more complete than it is.
+ *
+ * The counts come from the server, which already computed them while building
+ * the dataset. They used to be recomputed here from `rows`, which meant the
+ * same numbers existed in three places and could disagree — and one of them
+ * did: a single row claimed the gas figure for the block limit too, which is
+ * wrong by exactly the six chains that answer a node and declare no ceiling.
  */
 export function DeveloperSources({
-  rows,
+  coverage,
   className,
 }: {
-  rows: readonly DeveloperMetrics[];
+  coverage: DeveloperDataset["coverage"] | null;
   className?: string;
 }) {
-  const universe = rows.length;
-  const count = (predicate: (row: DeveloperMetrics) => boolean) =>
-    rows.filter(predicate).length;
+  if (!coverage) return null;
+  const universe = coverage.universe;
 
   const sources = [
     {
-      what: "Gas price, block limit, block fullness",
+      what: "Gas price",
       where: "The chain's own node, via public RPC",
-      covered: count((r) => Boolean(r.gas)),
+      covered: coverage.gas,
       note: "Read live and cached for a minute. Chains with no reachable public node show nothing.",
+    },
+    {
+      what: "Block gas limit and fullness",
+      where: "The same block the gas price came from",
+      covered: coverage.gasLimit,
+      note: "Fewer than answer at all: six chains report a sentinel instead of a ceiling, because Arbitrum Nitro and the zkSync stack do not bound a block the way mainnet does. Those read \u201cno cap\u201d rather than a blank.",
+    },
+    {
+      what: "Contract size limit",
+      where: "The chain's own specification",
+      covered: coverage.contractSize,
+      note: "The one curated figure here. No RPC method returns it — it is a protocol constant, and every EVM chain has one.",
     },
     {
       what: "Virtual machine and rollup stack",
       where: "L2Beat, or proven by the chain answering an Ethereum RPC",
-      covered: count((r) => Boolean(r.vm)),
+      covered: coverage.vm,
       note: "Only six chains, all very new, could not be established either way.",
+    },
+    {
+      what: "Rollup stage",
+      where: "L2Beat",
+      covered: coverage.stage,
+      note: "Applies to rollups only. An L1 secures itself with its own validator set, which the Nakamoto coefficient measures instead.",
     },
     {
       what: "Monthly active developers",
       where: "Electric Capital",
-      covered: count((r) => Boolean(r.developers)),
+      covered: coverage.developers,
       note: "They maintain the ecosystem-to-repository mapping, which is what counting a chain's own GitHub org gets wrong.",
     },
     {
       what: "Nakamoto coefficient",
       where: "Each chain's own validator set",
-      covered: count((r) => Boolean(r.decentralisation)),
+      covered: coverage.decentralisation,
       note: "Computed here rather than collected, so one definition applies everywhere. Most chains publish no reachable validator set.",
     },
     {
       what: "Improvement proposals",
       where: "Proposal repositories and governance forums",
-      covered: count((r) => Boolean(r.proposals)),
+      covered: coverage.proposals,
       note: "No aggregator covers this, so it is a per-chain registry — every entry verified before it shipped.",
     },
   ];

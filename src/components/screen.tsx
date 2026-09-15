@@ -382,7 +382,7 @@ export function Screen() {
 
         <ModeSwap mode={mode} stagger={105}>
           {mode === "developer" ? (
-            <DeveloperSources rows={developer.data?.chains ?? []} />
+            <DeveloperSources coverage={developer.data?.coverage ?? null} />
           ) : (
             <MethodologyPanel
               methodology={methodology.data}

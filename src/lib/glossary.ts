@@ -271,6 +271,20 @@ export const GLOSSARY = {
     long: "The limit is the ceiling on a single block; the fullness figure beside it is how much of that ceiling the most recent block actually consumed. Together they say whether a chain has headroom or is running hot.\n\nSome chains have no meaningful limit and report a placeholder instead — Arbitrum returns 2^50, which is a sentinel rather than a ceiling. Those are shown blank, because printing 1.1 quadrillion gas would be worse than printing nothing.",
   },
 
+  contractSize: {
+    title: "Contract size limit",
+    short:
+      "The largest contract that can be deployed, in bytes of compiled bytecode.",
+    long: "EIP-170 capped deployed contracts at 24,576 bytes in 2016, to stop a single enormous contract making every node that reads it do unbounded work. Almost every EVM chain inherited the rule unchanged, which is why the column looks so uniform — 47 of the 48 EVM chains here sit at exactly that number.\n\nThe exception is **Arbitrum at 49,152 bytes**, twice the ceiling, because its fee model does not price bytecode the way mainnet's does and so the reason for the original limit does not bite in the same way.\n\nIt matters more than a constant sounds: it is the reason large protocols are split across several contracts and behind proxies, and hitting it is a routine, irritating part of shipping on an EVM chain.\n\nUnlike everything else in developer mode this is **not a measurement**. No RPC method returns it — it is a protocol constant, read from each chain's specification rather than from a node, which is why it is the one figure here that is curated rather than fetched.",
+  },
+
+  rollupStage: {
+    title: "Rollup stage",
+    short:
+      "L2Beat's ladder for how much of a rollup's security still depends on its operator.",
+    long: "**Stage 0** means training wheels fully on: the operator can upgrade the system, and users depend on that operator behaving. **Stage 1** introduces a working fraud or validity proof and a security council, so the chain can be challenged rather than merely trusted. **Stage 2** means the proof system is the authority and upgrades are constrained — the point at which a rollup is governed by its code rather than its team.\n\nThe number is not a score, and a high stage does not make a chain a better place to deploy. It says one specific thing: what would happen to your contract's state if the operator turned hostile or simply disappeared.\n\nIt applies only to rollups. An L1 secures itself with its own validator set, which is what the Nakamoto coefficient measures instead, so the column is blank rather than zero for them — a blank meaning inapplicable, not unknown.",
+  },
+
   devActivity: {
     title: "Monthly active developers",
     short:

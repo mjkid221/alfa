@@ -371,6 +371,28 @@ async function geolocate(counts: Map<string, number>): Promise<NodePoint[]> {
   return points;
 }
 
+/**
+ * A hostname's first A record, or null.
+ *
+ * Over DNS-over-HTTPS rather than Node's resolver: it is keyless, works on any
+ * runtime including the edge, and is one more `fetchJson` in a file that is
+ * otherwise nothing but those. Two chains need it — Aptos and Flow both publish
+ * names where every other source publishes addresses.
+ */
+async function resolveHost(host: string): Promise<string | null> {
+  const answer = await fetchJson<{
+    Answer?: { type?: number; data?: string }[];
+  }>(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`, {
+    timeoutMs: 10_000,
+    retries: 1,
+    headers: { accept: "application/dns-json" },
+    nullOn: [400, 403, 404, 429],
+  }).catch(() => null);
+
+  // Type 1 is an A record; CNAME chains come back resolved alongside it.
+  return answer?.Answer?.find((row) => row.type === 1)?.data ?? null;
+}
+
 /** Count nodes per /24, discarding anything that is not an IPv4 address. */
 function subnetCounts(addresses: Iterable<string>): Map<string, number> {
   const counts = new Map<string, number>();
@@ -1011,18 +1033,7 @@ async function aptosNodes(): Promise<NodeMap | null> {
 
   if (hosts.size === 0 && literals.length === 0) return null;
 
-  const resolved = await mapLimit([...hosts], 8, async (host) => {
-    const answer = await fetchJson<{
-      Answer?: { type?: number; data?: string }[];
-    }>(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`, {
-      timeoutMs: 10_000,
-      retries: 1,
-      headers: { accept: "application/dns-json" },
-      nullOn: [400, 403, 404, 429],
-    }).catch(() => null);
-
-    return answer?.Answer?.find((row) => row.type === 1)?.data ?? null;
-  });
+  const resolved = await mapLimit([...hosts], 8, (host) => resolveHost(host));
 
   const addresses = [
     ...literals,
@@ -1040,6 +1051,91 @@ async function aptosNodes(): Promise<NodeMap | null> {
     "validators",
     "Aptos validator set + ip-api.com",
     "https://aptoslabs.com/",
+  );
+}
+
+/**
+ * Flow, from its own staking contract.
+ *
+ * The second chain after Aptos to publish where its nodes are without
+ * publishing an address: `FlowIDTableStaking.NodeInfo` carries a
+ * `networkingAddress`, and a Cadence script run through the public access API
+ * returns all of them in one request. Measured 15 September 2026: 312 staked
+ * nodes, 262 hostnames (`prod173.auroraplatform.com:3569`,
+ * `collection-008.mainnet.dapper-flow.com:3569`) and 50 literal addresses.
+ *
+ * It counts every staked node — collection, consensus, execution, verification
+ * and access — rather than only block producers, which is the network as Flow
+ * actually runs it.
+ *
+ * The script is sent base64-encoded because that is what the REST API takes,
+ * and the response is base64 JSON-Cadence, hence the double decode.
+ */
+const FLOW_SCRIPT = `import FlowIDTableStaking from 0x8624b52f9ddcd04a
+access(all) fun main(): [String] {
+  let ids = FlowIDTableStaking.getStakedNodeIDs()
+  var out: [String] = []
+  for id in ids { out.append(FlowIDTableStaking.NodeInfo(nodeID: id).networkingAddress) }
+  return out
+}`;
+
+async function flowNodes(): Promise<NodeMap | null> {
+  const encoded = await fetchJson<string>(
+    "https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed",
+    {
+      method: "POST",
+      body: {
+        script: Buffer.from(FLOW_SCRIPT).toString("base64"),
+        arguments: [],
+      },
+      timeoutMs: 45_000,
+      retries: 1,
+      nullOn: [400, 403, 404, 429],
+    },
+  );
+
+  if (typeof encoded !== "string") return null;
+
+  let addresses: string[];
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(encoded, "base64").toString("utf8"),
+    ) as { value?: { value?: unknown }[] };
+    addresses = (decoded.value ?? [])
+      .map((entry) => entry.value)
+      .filter((value): value is string => typeof value === "string");
+  } catch {
+    return null;
+  }
+
+  if (addresses.length === 0) return null;
+
+  // `host:port`, where the host is a name or a literal address.
+  const hosts = new Set<string>();
+  const literals: string[] = [];
+  for (const address of addresses) {
+    const host = address.replace(/:\d+$/, "").trim().toLowerCase();
+    if (host === "") continue;
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) literals.push(host);
+    else hosts.add(host);
+  }
+
+  const resolved = await mapLimit([...hosts], 8, (host) => resolveHost(host));
+  const placed = [
+    ...literals,
+    ...resolved.filter((ip): ip is string => ip !== null),
+  ];
+
+  const counts = subnetCounts(placed);
+  if (counts.size === 0) return null;
+
+  return assemble(
+    "Flow",
+    collapse(await geolocate(counts)),
+    addresses.length,
+    "staked nodes",
+    "Flow staking contract + ip-api.com",
+    "https://flow.com/",
   );
 }
 
@@ -1069,6 +1165,8 @@ function load(source: NodeMapSource): Promise<NodeMap | null> {
       return aptosNodes();
     case "nodewatch":
       return ethereumNodes();
+    case "flow":
+      return flowNodes();
   }
 }
 
@@ -1079,9 +1177,8 @@ export function fetchNodeMap(chain: string) {
   if (!source) return Promise.resolve<NodeMap | null>(null);
 
   return cachedValue(
-    // v4: hosting names are folded to one per provider, Monad comes from
-    // gmonads rather than a scrape, and Aptos is new.
-    `nodemap:v4:${chain}`,
+    // v5: Flow joins, resolved the same way Aptos is.
+    `nodemap:v5:${chain}`,
     { ttlSeconds: 86_400, staleSeconds: 172_800 },
     async (): Promise<NodeMap | null> => {
       try {
