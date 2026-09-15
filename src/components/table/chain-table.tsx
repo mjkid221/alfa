@@ -21,6 +21,8 @@ import type { GlossaryTerm } from "~/lib/glossary";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
+  formatGas,
+  formatGasWithUnit,
   formatMultiple,
   formatPercent,
   formatSigned,
@@ -382,12 +384,12 @@ export function ChainTable({
       {
         key: "gasPrice",
         label: "Gas price",
-        hint: "Current gas price in gwei, read from a node on the chain itself.",
+        hint: "Current gas price, read from a node on the chain itself. Quoted in wei or gwei, whichever keeps the figure readable.",
         term: "gasPrice",
         align: "right",
         width: 128,
         value: (_chain, dev) => dev?.gas?.gasPriceGwei ?? null,
-        render: (_chain, { dev }) => <Gwei value={dev?.gas?.gasPriceGwei} />,
+        render: (_chain, { dev }) => <Gas value={dev?.gas?.gasPriceGwei} />,
       },
       {
         key: "gasLimit",
@@ -678,33 +680,34 @@ export function ChainTable({
 /* ---------------------------------------------------------------- phones ---- */
 
 /**
+ * A gas price, with the unit it is quoted in.
+ *
+ * Chains span eleven orders of magnitude — Gnosis Chain quotes 9 wei where
+ * Hedera quotes 1,110 gwei — so `formatGas` picks the unit per row and this
+ * renders it beside the figure, dimmed, because the column header can no longer
+ * name one unit for everybody. Sorting is unaffected: `Column.value` reads the
+ * raw number.
+ */
+function Gas({ value }: { value: number | null | undefined }) {
+  const gas = formatGas(value);
+  if (gas.unit === null) {
+    return <span className="text-ink-faint text-[12.5px]">{gas.value}</span>;
+  }
+  return (
+    <span className="tnum text-[12.5px]">
+      {gas.value}
+      <span className="text-ink-faint ml-1 text-[10.5px]">{gas.unit}</span>
+    </span>
+  );
+}
+
+/**
  * The ranking on a phone: one card per chain instead of a 1,900px table that
  * showed only its sticky first column. Each card leads with the value gap,
  * then the three scores and the three sizes a reader compares first. Sorting
  * moves into a select, since the column headers that carried it are gone, and
  * shares the same persisted store as the table.
  */
-/**
- * A gas price in gwei.
- *
- * Chains span eleven orders of magnitude here — Celo quotes 202 gwei where
- * Linea quotes 0.000000007 — so a fixed number of decimals would render most of
- * the table as either "0.00" or noise. This keeps three significant figures and
- * drops to scientific notation below a millionth.
- */
-function Gwei({ value }: { value: number | null | undefined }) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return <span className="text-ink-faint text-[12.5px]">—</span>;
-  }
-  const text =
-    value === 0
-      ? "0"
-      : value < 1e-6
-        ? value.toExponential(1)
-        : Number(value.toPrecision(3)).toString();
-  return <span className="tnum text-[12.5px]">{text}</span>;
-}
-
 function MobileList({
   rows,
   columns,
@@ -894,17 +897,13 @@ const scoreText = (value: number | null) =>
 
 /** The same six slots, asking the engineering question instead. */
 function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
-  const gwei = (value: number | null | undefined) =>
-    value === null || value === undefined || !Number.isFinite(value)
-      ? "—"
-      : value < 1e-6
-        ? value.toExponential(1)
-        : Number(value.toPrecision(3)).toString();
-
   return (
     <>
       <MobileStat label="VM" value={dev?.vm ?? "—"} />
-      <MobileStat label="Gas (gwei)" value={gwei(dev?.gas?.gasPriceGwei)} />
+      <MobileStat
+        label="Gas price"
+        value={formatGasWithUnit(dev?.gas?.gasPriceGwei)}
+      />
       <MobileStat
         label="Block limit"
         value={dev?.gas?.gasLimit ? formatCount(dev.gas.gasLimit) : "—"}

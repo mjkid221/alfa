@@ -6,7 +6,7 @@ import {
   NODE_MAP_SOURCE,
   type NodeMapSource,
 } from "~/server/domain/chain-tech";
-import { fetchJson } from "~/server/lib/http";
+import { fetchJson, mapLimit } from "~/server/lib/http";
 
 /**
  * Where a chain's nodes physically are.
@@ -109,6 +109,63 @@ function subnetOf(raw: string): string | null {
     return null;
   }
   return parts.slice(0, 3).join(".");
+}
+
+/**
+ * Hosting providers that answer to more than one legal name.
+ *
+ * ip-api and the ASN registries return whatever the operator registered, which
+ * for the hyperscalers is several things at once: Hedera's 25 council nodes
+ * came back as "Amazon Technologies Inc." 8, "Amazon.com, Inc." 3 and
+ * "Amazon.com" 2, so the concentration line claimed 32% where the truth was
+ * 52%. A figure about concentration that is itself fragmented is worse than no
+ * figure, so the names that actually fragment are folded by hand.
+ *
+ * Matched anywhere in the string, not anchored — "UAB Cherry Servers" and
+ * "Cherry Servers" are the same company.
+ */
+const HOST_ALIASES: [RegExp, string][] = [
+  [/amazon|\baws\b/i, "Amazon"],
+  [/google/i, "Google"],
+  [/microsoft|azure/i, "Microsoft"],
+  [/\bovh\b|ovhcloud/i, "OVH"],
+  [/hetzner/i, "Hetzner"],
+  [/digitalocean/i, "DigitalOcean"],
+  [/linode|akamai/i, "Akamai"],
+  [/alibaba|aliyun/i, "Alibaba Cloud"],
+  [/\boracle\b/i, "Oracle"],
+  [/contabo/i, "Contabo"],
+  [/cherry\s*servers/i, "Cherry Servers"],
+  [/tera\s*switch/i, "TeraSwitch"],
+  [/webnx/i, "WebNX"],
+  [/latitude\.sh|\blatitude\b/i, "Latitude.sh"],
+  [/allnodes/i, "Allnodes"],
+  [/\bvultr\b/i, "Vultr"],
+  [/equinix/i, "Equinix"],
+  [/digital\s*realty/i, "Digital Realty"],
+];
+
+/** Legal-form suffixes, which carry no information about who the operator is. */
+const HOST_SUFFIX =
+  /[,\s]+(inc|incorporated|llc|l\.l\.c|ltd|limited|gmbh|ag|b\.?v|s\.?r\.?l|s\.?a\.?s|s\.?a|sarl|oy|ab|as|a\/s|plc|co|corp|corporation|company|kg|spa|srl|pte|pty)\.?$/i;
+
+/** One name per hosting provider, so a concentration figure means something. */
+function normaliseHost(raw: string | null | undefined): string | null {
+  const name = (raw ?? "").trim();
+  if (name === "") return null;
+
+  for (const [pattern, canonical] of HOST_ALIASES) {
+    if (pattern.test(name)) return canonical;
+  }
+
+  // Strip legal forms repeatedly: "Webnx, Inc." and "Foo Ltd Co." both occur.
+  let trimmed = name;
+  for (let i = 0; i < 3; i++) {
+    const next = trimmed.replace(HOST_SUFFIX, "").trim();
+    if (next === trimmed || next === "") break;
+    trimmed = next;
+  }
+  return trimmed === "" ? null : trimmed;
 }
 
 /**
@@ -302,7 +359,7 @@ async function geolocate(counts: Map<string, number>): Promise<NodePoint[]> {
           lon: row.lon,
           country: row.country ?? null,
           city: row.city ?? null,
-          host: row.isp ?? null,
+          host: normaliseHost(row.isp),
           weight: subnet ? (counts.get(subnet) ?? 1) : 1,
         });
       });
@@ -415,7 +472,7 @@ async function solanaNodes(): Promise<NodeMap | null> {
       country: row.ip_country ?? null,
       city: row.ip_city ?? null,
       weight: 1,
-      host: row.ip_org ?? null,
+      host: normaliseHost(row.ip_org),
     });
   }
 
@@ -430,26 +487,93 @@ async function solanaNodes(): Promise<NodeMap | null> {
 }
 
 /**
- * Monad, observed by BitCtrl.
+ * Monad, observed by a third party — because Monad publishes nothing itself.
  *
- * Monad publishes nothing: its RPC answers `Method not found` to every
- * validator method tried, and the validator maps that exist are third parties
- * running their own nodes. BitCtrl's is the only one whose data is reachable —
- * its `/geo` page embeds the whole table, and its robots.txt allows the page
- * (only `/api/` is disallowed, and there is no API).
+ * Its RPC still answers `Method not found` to every validator method tried, so
+ * the only places its 196 validators exist are dashboards run by people who
+ * operate their own nodes and watch the gossip network. Two of them are
+ * reachable, and they **agree**: both report 196 validators in 54 cities across
+ * 30 countries, which is about as much corroboration as a scrape can ask for.
+ * So both are used, best first.
  *
- * So this is a scrape, the single one in the app, and it is labelled `observed`
- * so the interface can say whose measurement it is. The HTML page is used
- * rather than the lighter `?_rsc` flight payload: both parse to identical
- * results (196 mainnet validators, 54 cities, 30 countries, checked both ways)
- * and the page is the stable contract where the flight payload is a framework
- * detail.
+ *   • **gmonads** publishes a real JSON API — 76 KB carrying coordinates, city,
+ *     country, ISP, ASN, stake and a connected flag. Its `epoch` parameter is
+ *     required but ignored: 0, 2,099, 2,101 and 999,999 all returned the
+ *     current epoch's data when tried, so nothing has to discover the epoch
+ *     first. Its robots.txt is empty.
+ *   • **BitCtrl** embeds the same table in the HTML of its `/geo` page, which
+ *     its robots.txt allows (only `/api/` is disallowed, and there is no API).
+ *     2.6 MB and a regex, which is why it is the fallback rather than the
+ *     source.
  *
- * The parse is deliberately structural — it validates that it found a plausible
- * number of mainnet records with finite coordinates, and returns null otherwise
- * rather than half a globe. This will break one day; that is the arrangement.
+ * Both are flagged `observed` so the interface can name whose measurement it is
+ * rather than implying Monad's own. Both validate structurally — a plausible
+ * number of records with finite coordinates — and return null otherwise, which
+ * will happen one day. That is the arrangement.
  */
 async function monadNodes(): Promise<NodeMap | null> {
+  // `.catch` and not just `??`: `fetchJson` returns null only for the statuses
+  // in `nullOn` and *throws* on a network failure, so without this a DNS blip
+  // at gmonads takes the whole map down instead of falling through to the
+  // fallback that exists precisely for that.
+  const primary = await monadFromGmonads().catch(() => null);
+  return primary ?? (await monadFromBitCtrl());
+}
+
+/** The good path: a JSON API, with stake and a reachability flag. */
+async function monadFromGmonads(): Promise<NodeMap | null> {
+  const raw = await fetchJson<{
+    data?: {
+      lat?: number | null;
+      lon?: number | null;
+      city?: string | null;
+      country?: string | null;
+      isp?: string | null;
+      as?: string | null;
+      validator_set_type?: string | null;
+    }[];
+  }>(
+    // The epoch is ignored, but omitting it is a 400.
+    "https://www.gmonads.com/api/geolocations?network=mainnet&epoch=1",
+    { timeoutMs: 30_000, retries: 1, nullOn: [400, 403, 404, 429] },
+  );
+
+  const rows = raw?.data;
+  if (!Array.isArray(rows)) return null;
+
+  const points: NodePoint[] = [];
+  for (const row of rows) {
+    // The consensus set is the network; anything else it tracks is not.
+    if (row.validator_set_type && row.validator_set_type !== "consensus") {
+      continue;
+    }
+    if (typeof row.lat !== "number" || typeof row.lon !== "number") continue;
+    if (row.lat === 0 && row.lon === 0) continue;
+    points.push({
+      lat: row.lat,
+      lon: row.lon,
+      country: row.country ?? null,
+      city: row.city ?? null,
+      weight: 1,
+      host: normaliseHost(row.isp) ?? row.as ?? null,
+    });
+  }
+
+  if (points.length < 50) return null;
+
+  return assemble(
+    "Monad",
+    collapse(points),
+    points.length,
+    "validators",
+    "gmonads",
+    "https://www.gmonads.com/globe",
+    true,
+  );
+}
+
+/** The fallback: the same table, scraped out of a 2.6 MB page. */
+async function monadFromBitCtrl(): Promise<NodeMap | null> {
   const response = await fetch("https://monad.bitctrl.io/geo", {
     signal: AbortSignal.timeout(45_000),
     cache: "no-store",
@@ -486,12 +610,12 @@ async function monadNodes(): Promise<NodeMap | null> {
       country: country === "" ? null : (country ?? null),
       city: city === "" ? null : (city ?? null),
       weight: 1,
-      host: host ?? asn ?? null,
+      host: normaliseHost(host) ?? asn ?? null,
     });
   }
 
-  // Structural validation. 196 validators were seen; anything under 50 means
-  // the page changed shape and the right answer is to show nothing.
+  // 196 validators were seen; under 50 means the page changed shape and the
+  // right answer is to show nothing.
   if (points.length < 50) return null;
 
   return assemble(
@@ -566,7 +690,7 @@ async function icpNodes(): Promise<NodeMap | null> {
       country,
       city: centre.name ?? null,
       weight: nodes,
-      host: centre.owner ?? null,
+      host: normaliseHost(centre.owner),
     });
   }
 
@@ -616,7 +740,7 @@ async function stellarNodes(): Promise<NodeMap | null> {
       country: row.geoData?.countryName ?? null,
       city: null,
       weight: 1,
-      host: row.isp ?? null,
+      host: normaliseHost(row.isp),
     });
   }
 
@@ -761,6 +885,92 @@ async function hederaNodes(): Promise<NodeMap | null> {
   );
 }
 
+/**
+ * Aptos, from its own validator set — via DNS.
+ *
+ * Alone among the ten, Aptos publishes where its validators are without
+ * publishing an address: `0x1::stake::ValidatorSet` carries a BCS-encoded
+ * `network_addresses` field whose bytes contain a readable hostname, and those
+ * hostnames resolve. Measured 15 September 2026: 84 active validators, 70 with
+ * a hostname that could be pulled out — the rest advertise only a DNS form this
+ * does not decode, which is 17% left on the floor and stated rather than hidden.
+ *
+ * The names are operator-run and readable as such: `val1.mainnet.aptos.p2p.org`,
+ * `validator.aptos.dsrvlabs.net`, `node-l1-aptos-vn-cm.nodeswift.cloud`.
+ *
+ * Resolution goes through Google's DNS-over-HTTPS rather than Node's resolver,
+ * because it is keyless, works on any runtime, and is one more `fetchJson` in a
+ * file that is already nothing but those. Eight at a time, once a day.
+ */
+async function aptosNodes(): Promise<NodeMap | null> {
+  const raw = await fetchJson<{
+    data?: {
+      active_validators?: { config?: { network_addresses?: string } }[];
+    };
+  }>(
+    "https://fullnode.mainnet.aptoslabs.com/v1/accounts/0x1/resource/0x1::stake::ValidatorSet",
+    { timeoutMs: 30_000, retries: 1, nullOn: [403, 404, 429] },
+  );
+
+  const validators = raw?.data?.active_validators;
+  if (!Array.isArray(validators) || validators.length === 0) return null;
+
+  const hosts = new Set<string>();
+  const literals: string[] = [];
+
+  for (const validator of validators) {
+    const hex = validator.config?.network_addresses;
+    if (!hex || !/^0x[0-9a-f]*$/i.test(hex)) continue;
+    let decoded: string;
+    try {
+      decoded = Buffer.from(hex.slice(2), "hex").toString("latin1");
+    } catch {
+      continue;
+    }
+    // A literal address needs no lookup; a hostname does.
+    const ip = /(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])/.exec(decoded);
+    if (ip?.[1]) {
+      literals.push(ip[1]);
+      continue;
+    }
+    const name = /[a-z0-9][a-z0-9.-]{6,}\.[a-z]{2,}/i.exec(decoded);
+    if (name) hosts.add(name[0].toLowerCase());
+  }
+
+  if (hosts.size === 0 && literals.length === 0) return null;
+
+  const resolved = await mapLimit([...hosts], 8, async (host) => {
+    const answer = await fetchJson<{
+      Answer?: { type?: number; data?: string }[];
+    }>(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`, {
+      timeoutMs: 10_000,
+      retries: 1,
+      headers: { accept: "application/dns-json" },
+      nullOn: [400, 403, 404, 429],
+    }).catch(() => null);
+
+    return answer?.Answer?.find((row) => row.type === 1)?.data ?? null;
+  });
+
+  const addresses = [
+    ...literals,
+    ...resolved.filter((ip): ip is string => ip !== null),
+  ];
+  const counts = subnetCounts(addresses);
+  if (counts.size === 0) return null;
+
+  return assemble(
+    "Aptos",
+    collapse(await geolocate(counts)),
+    // The whole active set, not just the part that resolved — `placedNodes`
+    // reports the shortfall rather than the count quietly shrinking.
+    validators.length,
+    "validators",
+    "Aptos validator set + ip-api.com",
+    "https://aptoslabs.com/",
+  );
+}
+
 /* ------------------------------------------------------------------ dispatch */
 
 function load(source: NodeMapSource): Promise<NodeMap | null> {
@@ -783,6 +993,8 @@ function load(source: NodeMapSource): Promise<NodeMap | null> {
       return xrplNodes();
     case "hedera":
       return hederaNodes();
+    case "aptos":
+      return aptosNodes();
   }
 }
 
@@ -793,9 +1005,9 @@ export function fetchNodeMap(chain: string) {
   if (!source) return Promise.resolve<NodeMap | null>(null);
 
   return cachedValue(
-    // v3: points carry city, weight and host, and the payload carries the
-    // hosting breakdown and the unit the counts are in.
-    `nodemap:v3:${chain}`,
+    // v4: hosting names are folded to one per provider, Monad comes from
+    // gmonads rather than a scrape, and Aptos is new.
+    `nodemap:v4:${chain}`,
     { ttlSeconds: 86_400, staleSeconds: 172_800 },
     async (): Promise<NodeMap | null> => {
       try {

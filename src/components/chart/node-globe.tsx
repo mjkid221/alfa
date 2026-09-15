@@ -7,6 +7,7 @@ import { formatCount } from "~/lib/format";
 import { easeOutExpo, useReducedMotion } from "~/lib/motion";
 import type { NodeMap, NodePoint } from "~/server/sources/node-map";
 
+import { landPoints } from "./land-mask";
 import {
   CACHE_STRIDE,
   PROJECTED_STRIDE,
@@ -103,6 +104,36 @@ const BANDS = 8;
 
 const GRATICULE = buildGraticule();
 
+/**
+ * The basemap, projected through the same cached-trig path as the nodes.
+ *
+ * 5,402 dots, built once for the life of the module — see `land-mask.ts` for
+ * why a bitmask rather than a coastline. It is drawn first and kept well below
+ * the graticule in weight, so it reads as ground the data sits on rather than
+ * as a second layer competing with it.
+ */
+const LAND = (() => {
+  const points = landPoints();
+  const cache = buildPointCache(
+    points.map((p) => ({
+      lat: p.lat,
+      lon: p.lon,
+      country: null,
+      city: null,
+      weight: null,
+      host: null,
+    })),
+  );
+  return { cache, count: points.length };
+})();
+
+/** Locations big enough to be worth labelling with their count. */
+const MAX_BADGES = 5;
+/** Below this depth a badge sits too near the limb to read. */
+const BADGE_MIN_Z = 0.3;
+/** Two badges closer than this, in px, would collide. */
+const BADGE_SPACING = 38;
+
 interface Drag {
   pointerId: number;
   x: number;
@@ -188,8 +219,13 @@ export function NodeGlobe({
   const graticuleRef = useRef<Float32Array>(
     new Float32Array(GRATICULE.cache.length),
   );
+  const landRef = useRef<Float32Array>(
+    new Float32Array(LAND.count * PROJECTED_STRIDE),
+  );
   const maskRef = useRef<Uint8Array | null>(null);
   const countRef = useRef(0);
+  /** Indices of the heaviest locations, largest first. Empty when unweighted. */
+  const badgeOrderRef = useRef<number[]>([]);
   const dragRef = useRef<Drag | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -249,6 +285,13 @@ export function NodeGlobe({
     const lit = styles.getPropertyValue("--color-seq-200").trim() || "#8fbcf0";
     const faint =
       styles.getPropertyValue("--color-hairline").trim() || "#22242a";
+    const overlay =
+      styles.getPropertyValue("--color-overlay").trim() || "#1b1e23";
+    const ink = styles.getPropertyValue("--color-ink").trim() || "#ffffff";
+    // Neutral, deliberately outside the sequential ramp: the land is geography,
+    // not a magnitude, and a blue basemap would read as part of the encoding.
+    const land =
+      styles.getPropertyValue("--color-ink-faint").trim() || "#5c5b57";
 
     const clock = clockRef.current;
 
@@ -457,6 +500,52 @@ export function NodeGlobe({
       context.lineWidth = 1;
       context.stroke();
 
+      // A rim light at the limb. Purely a depth cue: an unshaded disc of dots
+      // reads as flat until the edge is darker than the middle.
+      const glow = context.createRadialGradient(
+        cx,
+        cy,
+        radius * 0.72,
+        cx,
+        cy,
+        radius,
+      );
+      glow.addColorStop(0, "transparent");
+      glow.addColorStop(1, mark);
+      context.globalAlpha = 0.11;
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(cx, cy, radius, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 1;
+
+      // The land, so twenty nodes still read as places rather than as dots.
+      projectInto(
+        LAND.cache,
+        landRef.current,
+        LAND.count,
+        cx,
+        cy,
+        radius,
+        camera.lambda,
+        camera.phi,
+      );
+      context.fillStyle = land;
+      context.globalAlpha = 0.5;
+      context.beginPath();
+      for (let i = 0; i < LAND.count; i++) {
+        const o = i * PROJECTED_STRIDE;
+        const z = landRef.current[o + 2]!;
+        if (z <= 0.04) continue;
+        const r = 0.62 + z * 0.78;
+        const x = landRef.current[o]!;
+        const y = landRef.current[o + 1]!;
+        context.moveTo(x + r, y);
+        context.arc(x, y, r, 0, Math.PI * 2);
+      }
+      context.fill();
+      context.globalAlpha = 1;
+
       // Graticule every 30°, so the rotation is legible even over empty ocean.
       projectInto(
         GRATICULE.cache,
@@ -512,6 +601,52 @@ export function NodeGlobe({
         paintPoints(1, lit, 1, radius);
       } else {
         paintPoints(-1, mark, 1, radius);
+      }
+
+      // Counts on the biggest clusters. gmonads' globe does this and it is the
+      // single thing that makes a weighted point cloud legible: dot area says
+      // "bigger", a number says forty-eight. Only the largest few, only on the
+      // near hemisphere, and never where one would collide with another —
+      // beyond that the labels become the noise they were meant to cut through.
+      const badges = badgeOrderRef.current;
+      if (badges.length > 0) {
+        const placed: { x: number; y: number }[] = [];
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.font =
+          "600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace";
+
+        for (const index of badges) {
+          if (placed.length >= MAX_BADGES) break;
+          const o = index * PROJECTED_STRIDE;
+          const z = projectedRef.current[o + 2]!;
+          if (z < BADGE_MIN_Z) continue;
+          const x = projectedRef.current[o]!;
+          const y = projectedRef.current[o + 1]! - 13;
+          if (
+            placed.some((q) => Math.hypot(q.x - x, q.y - y) < BADGE_SPACING)
+          ) {
+            continue;
+          }
+          const weight = latest.current.map.points[index]?.weight;
+          if (weight === null || weight === undefined) continue;
+          placed.push({ x, y });
+
+          const text = formatCount(weight);
+          const w = context.measureText(text).width + 11;
+          const h = 16;
+          context.globalAlpha = 0.5 + z * 0.5;
+          context.beginPath();
+          context.roundRect(x - w / 2, y - h / 2, w, h, 4);
+          context.fillStyle = overlay;
+          context.fill();
+          context.strokeStyle = lit;
+          context.lineWidth = 0.75;
+          context.stroke();
+          context.fillStyle = ink;
+          context.fillText(text, x, y + 0.5);
+          context.globalAlpha = 1;
+        }
       }
 
       // The hovered mark, ringed so the tooltip has something to point at.
@@ -665,6 +800,16 @@ export function NodeGlobe({
     projectedRef.current = new Float32Array(points.length * PROJECTED_STRIDE);
     countRef.current = points.length;
     hoverRef.current = -1;
+    // Rank once here rather than per frame: the render walks this in order and
+    // stops as soon as it has placed enough. Bitcoin's source publishes no
+    // per-location counts, so it gets no badges — which is the honest outcome
+    // rather than a missing feature.
+    badgeOrderRef.current = points
+      .map((point, index) => ({ index, weight: point.weight ?? 0 }))
+      .filter((row) => row.weight > 1)
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, MAX_BADGES * 4)
+      .map((row) => row.index);
     setHovered(null);
     engineRef.current?.schedule();
   }, [points]);

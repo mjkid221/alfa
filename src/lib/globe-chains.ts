@@ -22,6 +22,7 @@ export const GLOBE_CHAINS = [
   "Internet Computer",
   "Avalanche C-Chain",
   "Stellar",
+  "Aptos",
   "Hedera",
 ] as const;
 

@@ -249,6 +249,11 @@ function Finding({
   const reduced = useReducedMotion();
   const counted = useCountUp(gap, { enabled: !reduced });
   const magnitude = counted === null ? null : Math.abs(Math.round(counted));
+  // The width the settled figure will need, held from the first frame so the
+  // "points undervalued" label beside it does not slide as the number climbs
+  // from one digit to two.
+  const settledWidth =
+    gap === null ? 1 : Math.abs(Math.round(gap)).toString().length;
 
   const runnerGap = runnerUp?.scores.mispricing ?? null;
   const margin = gap !== null && runnerGap !== null ? gap - runnerGap : null;
@@ -263,10 +268,11 @@ function Finding({
       <div className="min-w-0">
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span
-            className="text-figure text-[clamp(32px,2.6vw,42px)] leading-[0.9]"
+            className="text-figure inline-block text-[clamp(32px,2.6vw,42px)] leading-[0.9]"
             style={{
               color: tone,
               textShadow: `0 0 32px color-mix(in oklab, ${tone} 20%, transparent)`,
+              minWidth: `${settledWidth}ch`,
             }}
           >
             {magnitude ?? "—"}

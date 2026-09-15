@@ -385,7 +385,8 @@ export type NodeMapSource =
   | { kind: "avalanche" }
   | { kind: "tron" }
   | { kind: "xrpl" }
-  | { kind: "hedera" };
+  | { kind: "hedera" }
+  | { kind: "aptos" };
 
 export const NODE_MAP_SOURCE: Record<GlobeChain, NodeMapSource> = {
   Bitcoin: { kind: "bitnodes" },
@@ -397,4 +398,5 @@ export const NODE_MAP_SOURCE: Record<GlobeChain, NodeMapSource> = {
   Tron: { kind: "tron" },
   Ripple: { kind: "xrpl" },
   Hedera: { kind: "hedera" },
+  Aptos: { kind: "aptos" },
 };

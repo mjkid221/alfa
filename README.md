@@ -571,7 +571,7 @@ a filter by virtual machine. None of it feeds the score.
 | Monthly active developers | Electric Capital | 45 of 85 |
 | Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
 | Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
-| Node locations | bitnodes, Stakewiz, BitCtrl and five chains' own endpoints | 9 of 85 |
+| Node locations | bitnodes, Stakewiz, gmonads and six chains' own endpoints | 10 of 85 |
 
 Coverage varies enormously, so every panel states its own rather than implying
 completeness.
@@ -587,10 +587,18 @@ would mean nothing. And improvement proposals are a verified per-chain registry,
 because no aggregator covers them — Boardroom and Tally both want a key.
 
 The globe draws one point per **distinct location**, not per node: Bitcoin's
-26,400 nodes collapse to about 3,300 coordinates, because a datacentre rack is
-one place however many machines are in it. There is no basemap — at that density
-the nodes draw the continents themselves. Where a source can count what sits at a
-location, the mark is sized by it, by area.
+26,500 nodes collapse to about 3,300 coordinates, because a datacentre rack is
+one place however many machines are in it. Where a source can count what sits at
+a location the mark is sized by it, by area, and the largest few carry the count
+as a number.
+
+It used to carry no basemap, on the reasoning that at that density the nodes
+draw the continents themselves. They do — if there are three thousand of them.
+Hedera has twenty, and read as dots on a wireframe with nothing to say whether a
+cluster was in Virginia or in the Atlantic. So there is now a stippled landmass
+behind them, which costs **2 KB**: Natural Earth rasterised onto a two-degree
+grid and stored as one bit per cell, rather than 55 KB of coastline vectors and
+a decoder to read them.
 
 You can turn it: drag to rotate on both axes, wheel or pinch to zoom, hover a
 mark to name the place and its hosting provider, and click a country beside it to
@@ -600,12 +608,22 @@ rotates gently until you touch it, then it is yours; `Home` gives it back. With
 reduced motion set it never moves on its own — and then it draws exactly one
 frame, where the old version redrew the same image sixty times a second.
 
-The counts are not all in the same unit, so each globe names its own: 26,400
+The counts are not all in the same unit, so each globe names its own: 26,500
 Bitcoin **nodes**, 196 Monad **validators**, Hedera's 25 **council nodes** — which
-is its entire consensus layer, not a sample. Nine chains can be placed and one of
-them is a favour: Monad publishes nothing, so its validators are read from
-BitCtrl's public dashboard and labelled as that third party's measurement rather
-than the chain's own data. Ethereum still cannot be placed at all.
+is its entire consensus layer, not a sample. Ten chains can be placed and one of
+them is a favour: Monad publishes nothing, so its validators come from two
+independent observers that happen to agree, and are labelled as a third party's
+measurement rather than the chain's own data. Aptos is the awkward one — it
+publishes hostnames rather than addresses, so they are resolved before they can
+be placed, and the 20 of 84 that cannot be read are reported rather than
+dropped. Ethereum still cannot be placed at all.
+
+Beside the globe is the breakdown that actually answers a deployment question:
+**who hosts it**. Geography across thirty countries means less than it looks if
+one company owns the hardware — Hedera's 25 council nodes sit in seven countries
+and 52% of them are at Amazon. That figure needed the provider names folding
+first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
+Inc." and "Amazon.com", which had been quietly reporting 32%.
 
 **One rule changed.** Gas needs a node, and public endpoints answer for 39 of the
 41 EVM chains but not reliably for the rest, so `ALCHEMY_API_KEY` is an optional

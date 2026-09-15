@@ -6,7 +6,12 @@ import { ArrowRight } from "lucide-react";
 import { Explain } from "~/components/ui/explain";
 import { ChainAvatar } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
-import { formatCount } from "~/lib/format";
+import {
+  formatCount,
+  formatGas,
+  formatGasLike,
+  formatInteger,
+} from "~/lib/format";
 import { useCountUp, useReducedMotion } from "~/lib/motion";
 import type { GlossaryTerm } from "~/lib/glossary";
 import type { DeveloperMetrics } from "~/server/domain/developer";
@@ -32,9 +37,21 @@ interface Category {
   term: GlossaryTerm;
   /** Lower is better for gas; higher is better for the other two. */
   lowerWins: boolean;
-  unit: string;
+  /**
+   * The figure, formatted. `reference` is the settled value, which pins the
+   * unit and the decimal count so a count-up cannot change shape on the way —
+   * see `formatGasLike`. Categories whose format does not vary ignore it.
+   */
+  figure: (value: number, reference: number) => string;
+  /** The unit beside the hero figure. Varies with the value for gas alone. */
+  unit: (value: number) => string;
+  /**
+   * A compact unit for the runner-up line, or null where the hero's phrase is
+   * already implied. Gas needs one: "then Linea at 9" is ambiguous where the
+   * leader was quoted in gwei.
+   */
+  inlineUnit: ((value: number) => string) | null;
   value: (row: DeveloperMetrics) => number | null;
-  format: (value: number) => string;
   /** How many chains had a figure at all. */
   note: (covered: number, universe: number) => string;
 }
@@ -45,14 +62,10 @@ const CATEGORIES: Category[] = [
     label: "Cheapest gas",
     term: "gasPrice",
     lowerWins: true,
-    unit: "gwei",
+    figure: formatGasLike,
+    unit: (v) => formatGas(v).unit ?? "gwei",
+    inlineUnit: (v) => formatGas(v).unit ?? "gwei",
     value: (row) => row.gas?.gasPriceGwei ?? null,
-    format: (v) =>
-      v === 0
-        ? "0"
-        : v < 1e-6
-          ? v.toExponential(1)
-          : Number(v.toPrecision(3)).toString(),
     note: (c, u) => `of ${c} chains with a reachable node, out of ${u}`,
   },
   {
@@ -60,9 +73,10 @@ const CATEGORIES: Category[] = [
     label: "Most developers",
     term: "devActivity",
     lowerWins: false,
-    unit: "monthly active",
+    figure: (v) => formatCount(v),
+    unit: () => "monthly active",
+    inlineUnit: null,
     value: (row) => row.developers?.monthlyActive ?? null,
-    format: (v) => formatCount(v),
     note: (c, u) => `of ${c} tracked ecosystems, out of ${u}`,
   },
   {
@@ -70,9 +84,13 @@ const CATEGORIES: Category[] = [
     label: "Most decentralised",
     term: "nakamoto",
     lowerWins: false,
-    unit: "Nakamoto coefficient",
+    // The coefficient is a count of validators, so it has no fractional part —
+    // and `formatInteger` rounds, which is what stops the count-up displaying
+    // "17.999999999999996" on its way to 18.
+    figure: (v) => formatInteger(v),
+    unit: () => "Nakamoto coefficient",
+    inlineUnit: null,
     value: (row) => row.decentralisation?.nakamoto ?? null,
-    format: (v) => String(v),
     note: (c, u) => `of ${c} chains publishing a validator set, out of ${u}`,
   },
 ];
@@ -172,10 +190,13 @@ function LeaderCard({
     );
   }
 
-  // Count up to the settled figure, but format the settled one — an animating
-  // value through `toPrecision` flickers between notations.
+  // The settled figure decides how everything is written: its unit, its decimal
+  // count, and the width the animating number is given. Formatting each frame
+  // on its own value instead is what made the gas card flip between notations
+  // and the Nakamoto card shove its own label across the row.
+  const settled = category.figure(leader.value, leader.value);
   const shown =
-    counted === null ? category.format(leader.value) : category.format(counted);
+    counted === null ? settled : category.figure(counted, leader.value);
 
   return (
     <section
@@ -203,20 +224,31 @@ function LeaderCard({
 
       <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
         <span
-          className="text-figure text-[clamp(28px,2.2vw,36px)] leading-[0.9]"
-          style={{ color: "var(--color-seq-400)" }}
+          className="text-figure inline-block text-[clamp(28px,2.2vw,36px)] leading-[0.9]"
+          style={{
+            color: "var(--color-seq-400)",
+            // Hold the settled figure's width from the first frame. `text-figure`
+            // already gives tabular numerals, but those equalise digit *glyphs*,
+            // not string length — so without this the unit label beside it is
+            // pushed across the card and wrapped as the number counts up. The
+            // house idiom is a literal `min-w-[Nch]`; N is per-figure here.
+            minWidth: `${settled.length}ch`,
+          }}
         >
           {shown}
         </span>
         <span className="text-display text-ink-secondary text-[13px] leading-tight">
-          {category.unit}
+          {category.unit(leader.value)}
         </span>
       </p>
 
       {runnerUp && (
         <p className="text-ink-faint mt-1 text-[11.5px] leading-snug">
           then {runnerUp.row.name} at{" "}
-          <span className="tnum">{category.format(runnerUp.value)}</span>
+          <span className="tnum">
+            {category.figure(runnerUp.value, runnerUp.value)}
+          </span>
+          {category.inlineUnit && ` ${category.inlineUnit(runnerUp.value)}`}
         </p>
       )}
 

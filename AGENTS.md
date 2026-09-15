@@ -184,15 +184,26 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
   Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
   and never read a README. Verify any new entry live before adding it.
-- Node locations exist for **nine** chains, not the two first found — the
+- Node locations exist for **ten** chains, not the two first found — the
   registry and the rejections are in `domain/chain-tech.ts`. Five need no
   geolocation: bitnodes (`?field=coordinates`, 3,325 **distinct** coordinates in
   62 KB, with no duplicates, so no per-location counts exist; its full snapshot
   is 2.8 MB and its rows carry five fields and **no geography at all**),
-  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, and BitCtrl
+  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, and gmonads
   for Monad. Four are geolocated from addresses: Avalanche `info.peers`,
   TronGrid `listnodes` (hosts are **hex-encoded ASCII**), XRPScan, and Hedera's
   mirror node.
+- **Aptos publishes hostnames, not addresses.** `0x1::stake::ValidatorSet`'s
+  `network_addresses` is BCS-encoded and its bytes contain a readable name
+  (`val1.mainnet.aptos.p2p.org`); 70 of 84 validators yield one, and
+  `dns.google/resolve` turns them into addresses keylessly. It is the only
+  source needing a resolution step, and the 14 that decode to nothing are
+  reported through `placedNodes` rather than shrinking the total.
+- **ISP names fragment, and a concentration figure must not.** ip-api returned
+  Hedera's council as "Amazon Technologies Inc." 8, "Amazon.com, Inc." 3 and
+  "Amazon.com" 2, so "32% with one provider" should have read **52%**.
+  `normaliseHost` folds the hyperscalers by hand and strips legal suffixes;
+  extend `HOST_ALIASES` rather than inventing a cleverer rule.
 - **ip-api allows 15 batch requests a minute, not 45.** 45 is its single-address
   limit; the batch endpoint counts down in `X-Rl` and resets after `X-Ttl`. Tron
   alone needs twelve batches, so `node-map.ts` waits on those headers — a
@@ -204,9 +215,18 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   Ethereum genuinely has nothing: ethernodes does not resolve, nodewatch and
   monitoreth serve empty SPA shells, MigaLabs is Cloudflare-gated.
 - Monad publishes nothing of its own — its RPC still answers `Method not found`.
-  Its 196 validators are read from BitCtrl's `/geo` page, which its robots.txt
-  allows, and the payload is flagged `observed` so the panel can say whose
-  measurement it is. Validate structurally and return null; it will break.
+  Two third parties observe it and **agree** (196 validators, 54 cities, 30
+  countries), so both are used: **gmonads' JSON API** first
+  (`/api/geolocations?network=mainnet&epoch=<n>` — 76 KB with coordinates, city,
+  ISP, ASN and stake; the `epoch` is **required but ignored**, any value returns
+  the current one, and omitting it is a 400), falling back to scraping
+  BitCtrl's 2.6 MB `/geo` page. Both are flagged `observed`. Validate
+  structurally and return null; they will break.
+- The globe's land is a **2 KB bitmask**, not a coastline — `chart/land-mask.ts`
+  rasterises Natural Earth onto a 2° grid, 5,402 of 16,200 cells. It replaced
+  the claim that "the nodes draw the continents themselves", which held only for
+  Bitcoin: Hedera's 20 points read as noise without it. Regeneration script is
+  in the file's docblock.
 - `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
   published APIs. First thing to check if a developer panel goes blank.
 - A canvas sized in pixels inside a grid item deadlocks on resize: the item's
