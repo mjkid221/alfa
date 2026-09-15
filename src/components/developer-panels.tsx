@@ -66,6 +66,27 @@ export function useLiveProposer(chain: string) {
 }
 
 /**
+ * How tall the globe is, and therefore how tall the panel is.
+ *
+ * **The rail used to decide this, and it made switching chains jarring.**
+ * Measured at 1440px before the change: the panel stood at 570px on Bitcoin,
+ * 659px on eight chains and 851px on Monad — a 281px swing driven entirely by
+ * how many hosting rows a chain had and whether it carried a live readout.
+ * Everything below the panel moved every time the reader changed chain.
+ *
+ * So the grid row is pinned to this and the rail is capped at it. The globe was
+ * always the taller half; now it is the only half that decides.
+ *
+ * **460 rather than the 400 it was**, because the cap has to clear the tallest
+ * rail or it hides the thing the list is for. Measured across all twelve: the
+ * fullest rail is 447px — Ripple, Flow and Aptos, whose totals run to a second
+ * line because not every node could be placed — and at 400 the host
+ * concentration sentence, which is the point of the host list, sat below the
+ * fold. The extra 60px is also 60px more sphere.
+ */
+export const GLOBE_HEIGHT = 460;
+
+/**
  * The globe, and the two breakdowns that make it readable.
  *
  * The country list is not a caption: hovering a row lights those points and
@@ -77,6 +98,15 @@ export function useLiveProposer(chain: string) {
  * Geography spread across thirty countries still means very little if two
  * thirds of it is one company's hardware, which is the same concern the
  * Nakamoto coefficient measures in stake rather than in racks.
+ *
+ * ## Why the source line and the live readout sit below the grid
+ *
+ * They are the two pieces whose height varies most by chain — Monad carries
+ * four extra lines of live proposer and a two-sentence attribution where
+ * Bitcoin carries one. Inside the rail they pushed the panel around; as a
+ * full-width footer they are one line that changes its text, not its size. It
+ * is also where they belong: both describe the whole map rather than any part
+ * of it.
  */
 export function NodeGlobePanel({ className }: { className?: string }) {
   const [chain, setChain] = useState<string>("Bitcoin");
@@ -91,6 +121,17 @@ export function NodeGlobePanel({ className }: { className?: string }) {
     { chain },
     { staleTime: 600_000, placeholderData: (previous) => previous },
   );
+
+  /*
+   * `placeholderData` keeps the previous chain's globe on screen while the next
+   * one loads, which is the right call — a globe that blanks and re-enters is
+   * worse than one that holds. But on its own it is silent: the reader clicks
+   * Tron, sees Bitcoin's 3,325 points for another two seconds, and has no way
+   * to tell whether anything is happening. Some of these take a while — the
+   * ones that geolocate thousands of addresses most of all — so the stale
+   * frame has to say that it is stale.
+   */
+  const stale = map.isPlaceholderData && map.isFetching;
 
   const data = map.data;
   const countries = data?.countries ?? [];
@@ -125,159 +166,200 @@ export function NodeGlobePanel({ className }: { className?: string }) {
       bodyClassName="px-4 pt-2 pb-4"
       className={className}
     >
-      {map.isPending ? (
-        <p className="text-ink-muted px-2 py-16 text-center text-[12.5px]">
-          Placing nodes…
-        </p>
-      ) : data ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
-          {/* Taller than the alpha map it replaces: the sphere's radius is
-              bounded by the shorter side, so in a wide panel every pixel of
-              height is a pixel of globe. */}
-          <NodeGlobe
-            map={data}
-            height={400}
-            highlightCountry={highlight}
-            highlightHost={host}
-            focus={focus}
-            pulse={live.pulse}
-            onHoverPoint={(point) =>
-              setHighlight(host ? null : (point?.country ?? null))
-            }
-            onFocusRelease={() => setFocus(null)}
-          />
-
-          <div className="space-y-3">
-            <Stat
-              label={data.unit}
-              value={formatCount(data.totalNodes)}
-              note={placedNote(data)}
-            />
-
-            {countries.length > 0 ? (
-              <div>
-                <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
-                  Largest countries
-                </p>
-                {/* Buttons, not list items: this is the globe's text twin and
-                    the keyboard route to the same focus the canvas offers. */}
-                <ul className="space-y-0.5">
-                  {countries.slice(0, 7).map((row, index) => (
-                    <li key={row.country}>
-                      <button
-                        type="button"
-                        aria-pressed={focus?.country === row.country}
-                        onMouseEnter={() => setHighlight(row.country)}
-                        onMouseLeave={() => setHighlight(null)}
-                        onFocus={() => setHighlight(row.country)}
-                        onBlur={() => setHighlight(null)}
-                        onClick={() => {
-                          setHost(null);
-                          setFocus((current) =>
-                            current?.country === row.country
-                              ? null
-                              : {
-                                  country: row.country,
-                                  nonce: (current?.nonce ?? 0) + 1,
-                                },
-                          );
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
-                          focus?.country === row.country
-                            ? "bg-raised text-ink"
-                            : "hover:bg-raised text-ink-secondary",
-                        )}
-                      >
-                        <span
-                          className="size-2 shrink-0 rounded-[2px]"
-                          style={{ background: sequentialStep(index, 7) }}
-                          aria-hidden
-                        />
-                        <span className="truncate">{row.country}</span>
-                        <span className="tnum text-ink-faint ml-auto">
-                          {formatCount(row.count)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+      {/* Pinned, so the panel is the same height on all twelve chains and on
+          the first load before any of them has answered. */}
+      <div
+        className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]"
+        style={{ minHeight: GLOBE_HEIGHT }}
+      >
+        {map.isPending ? (
+          <GlobeSkeleton />
+        ) : data ? (
+          <>
+            {/* Taller than the alpha map it replaces: the sphere's radius is
+                bounded by the shorter side, so in a wide panel every pixel of
+                height is a pixel of globe. */}
+            <div className="relative min-w-0">
+              <div
+                className={cn(
+                  "transition-opacity duration-200",
+                  stale && "opacity-40",
+                )}
+              >
+                <NodeGlobe
+                  map={data}
+                  height={GLOBE_HEIGHT}
+                  highlightCountry={highlight}
+                  highlightHost={host}
+                  focus={focus}
+                  pulse={live.pulse}
+                  onHoverPoint={(point) =>
+                    setHighlight(host ? null : (point?.country ?? null))
+                  }
+                  onFocusRelease={() => setFocus(null)}
+                />
               </div>
-            ) : (
-              <p className="text-ink-faint text-[11px] leading-relaxed">
-                This source publishes coordinates without countries, so there is
-                no national breakdown to show.
+              {stale && <Placing />}
+            </div>
+
+            <div
+              // Capped at the globe rather than allowed to exceed it. Nothing
+              // reaches this today — the tallest rail is ~330px — but a chain
+              // with a longer host list must not be able to stretch the panel.
+              className={cn(
+                "scroll-slim space-y-3 overflow-y-auto transition-opacity duration-200",
+                stale && "opacity-40",
+              )}
+              style={{ maxHeight: GLOBE_HEIGHT }}
+              aria-busy={stale}
+            >
+              <Stat
+                label={data.unit}
+                value={formatCount(data.totalNodes)}
+                note={placedNote(data)}
+              />
+
+              {countries.length > 0 ? (
+                <div>
+                  <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
+                    Largest countries
+                  </p>
+                  {/* Buttons, not list items: this is the globe's text twin and
+                      the keyboard route to the same focus the canvas offers. */}
+                  <ul className="space-y-0.5">
+                    {countries.slice(0, 6).map((row, index) => (
+                      <li key={row.country}>
+                        <button
+                          type="button"
+                          aria-pressed={focus?.country === row.country}
+                          onMouseEnter={() => setHighlight(row.country)}
+                          onMouseLeave={() => setHighlight(null)}
+                          onFocus={() => setHighlight(row.country)}
+                          onBlur={() => setHighlight(null)}
+                          onClick={() => {
+                            setHost(null);
+                            setFocus((current) =>
+                              current?.country === row.country
+                                ? null
+                                : {
+                                    country: row.country,
+                                    nonce: (current?.nonce ?? 0) + 1,
+                                  },
+                            );
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
+                            focus?.country === row.country
+                              ? "bg-raised text-ink"
+                              : "hover:bg-raised text-ink-secondary",
+                          )}
+                        >
+                          <span
+                            className="size-2 shrink-0 rounded-[2px]"
+                            style={{ background: sequentialStep(index, 6) }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{row.country}</span>
+                          <span className="tnum text-ink-faint ml-auto">
+                            {formatCount(row.count)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-ink-faint text-[11px] leading-relaxed">
+                  This source publishes coordinates without countries, so there
+                  is no national breakdown to show.
+                </p>
+              )}
+
+              {hosts.length > 0 && (
+                <div>
+                  <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
+                    Largest hosts
+                  </p>
+                  {/* Selecting a provider joins its locations on the globe.
+                      That is the one relationship in the data worth drawing, and
+                      it is the answer to the question the concentration line
+                      below raises: where, exactly, is all of it? */}
+                  <ul className="space-y-0.5">
+                    {hosts.slice(0, 4).map((row) => (
+                      <li key={row.host}>
+                        <button
+                          type="button"
+                          aria-pressed={host === row.host}
+                          onClick={() => {
+                            setFocus(null);
+                            setHighlight(null);
+                            setHost((current) =>
+                              current === row.host ? null : row.host,
+                            );
+                          }}
+                          className={cn(
+                            "flex w-full items-baseline gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
+                            host === row.host
+                              ? "bg-raised text-ink"
+                              : "hover:bg-raised text-ink-secondary",
+                          )}
+                        >
+                          <span className="truncate">{row.host}</span>
+                          <span className="tnum text-ink-faint ml-auto">
+                            {formatCount(row.count)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {data.hostConcentration !== null && (
+                    <p className="text-ink-faint mt-1.5 px-1.5 text-[11px] leading-snug">
+                      {Math.round(data.hostConcentration * 100)}% of placed{" "}
+                      {data.unit} sit with one provider.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-ink-muted col-span-full self-center px-2 text-center text-[12.5px] leading-relaxed">
+            {chain} publishes no node locations.
+          </p>
+        )}
+      </div>
+
+      {/*
+        The map's footnotes, full width and one line tall on every chain — and
+        rendered whether or not there is anything to put in them. Hanging the
+        whole row off `data` made the first paint 39.5px shorter than the
+        second, which is the same shuffle this panel was rebuilt to remove,
+        just moved to a place that is harder to notice.
+      */}
+      <div className="border-hairline mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t pt-2.5">
+        {data ? (
+          <>
+            {live.block !== null && (
+              <p className="text-ink-secondary text-[11px]">
+                <span className="text-ink-faint mr-1.5 tracking-wide uppercase">
+                  Live
+                </span>
+                <span className="tnum">Block {formatInteger(live.block)}</span>
+                <span
+                  className="text-ink-faint"
+                  // The caveat that used to take two lines of the rail. It is a
+                  // qualification of the readout, not a second fact, so it hangs
+                  // off the readout rather than sitting beside it.
+                  title="Only about a quarter of Monad's proposers can be placed: the rest sign with an address they have not registered against a published location."
+                >
+                  {live.place
+                    ? ` · proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
+                    : " · proposer not registered under a published address"}
+                </span>
               </p>
             )}
-
-            {hosts.length > 0 && (
-              <div>
-                <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
-                  Largest hosts
-                </p>
-                {/* Selecting a provider joins its locations on the globe.
-                    That is the one relationship in the data worth drawing, and
-                    it is the answer to the question the concentration line
-                    below raises: where, exactly, is all of it? */}
-                <ul className="space-y-0.5">
-                  {hosts.slice(0, 4).map((row) => (
-                    <li key={row.host}>
-                      <button
-                        type="button"
-                        aria-pressed={host === row.host}
-                        onClick={() => {
-                          setFocus(null);
-                          setHighlight(null);
-                          setHost((current) =>
-                            current === row.host ? null : row.host,
-                          );
-                        }}
-                        className={cn(
-                          "flex w-full items-baseline gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
-                          host === row.host
-                            ? "bg-raised text-ink"
-                            : "hover:bg-raised text-ink-secondary",
-                        )}
-                      >
-                        <span className="truncate">{row.host}</span>
-                        <span className="tnum text-ink-faint ml-auto">
-                          {formatCount(row.count)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {data.hostConcentration !== null && (
-                  <p className="text-ink-faint mt-1.5 px-1.5 text-[11px] leading-snug">
-                    {Math.round(data.hostConcentration * 100)}% of placed{" "}
-                    {data.unit} sit with one provider.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {live.block !== null && (
-              <div className="border-hairline border-t pt-2.5">
-                <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
-                  Live
-                </p>
-                <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
-                  Block {formatInteger(live.block)}
-                </p>
-                <p className="text-ink-faint text-[11px] leading-snug">
-                  {live.place
-                    ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
-                    : "proposer not registered under a published address"}
-                </p>
-                <p className="text-ink-faint mt-1 text-[11px] leading-snug">
-                  About a quarter of proposers can be placed this way; the rest
-                  sign with an address they have not registered.
-                </p>
-              </div>
-            )}
-
-            <p className="text-ink-faint text-[11px] leading-relaxed">
-              {data.observed ? "Observed by " : ""}
+            <p className="text-ink-faint ml-auto text-[11px]">
+              {data.observed ? "Observed by " : "Source: "}
               <a
                 href={data.sourceUrl}
                 target="_blank"
@@ -286,18 +368,85 @@ export function NodeGlobePanel({ className }: { className?: string }) {
               >
                 {data.source}
               </a>
-              {data.observed
-                ? ". Monad publishes no node data itself, so this is a third party's measurement of the network."
-                : ""}
+              {data.observed && (
+                <span title="Monad publishes no node data itself, so this is a third party's measurement of the network.">
+                  {" "}
+                  — a third party&rsquo;s measurement
+                </span>
+              )}
             </p>
-          </div>
-        </div>
-      ) : (
-        <p className="text-ink-muted px-2 py-12 text-center text-[12.5px] leading-relaxed">
-          {chain} publishes no node locations.
-        </p>
-      )}
+          </>
+        ) : (
+          // One blank line rather than a `min-height`. The row is a single line
+          // of 11px text, and a hard-coded height for it was out by 10.5px the
+          // first time — it has to clear the padding and the border as well,
+          // which a real line does by being one.
+          <p className="text-[11px] leading-normal" aria-hidden>
+            &nbsp;
+          </p>
+        )}
+      </div>
     </Panel>
+  );
+}
+
+/**
+ * What the panel shows while a chain is being placed for the first time.
+ *
+ * Occupies the grid exactly as the real thing does, because the alternative —
+ * a one-line "Placing nodes…" that collapsed the panel to a fifth of its
+ * height and then shoved the page back down — was the single worst piece of
+ * movement on the screen.
+ */
+export function GlobeSkeleton() {
+  return (
+    <>
+      <div className="relative flex min-w-0 items-center justify-center">
+        <div
+          className="bg-raised/50 rounded-full motion-safe:animate-pulse"
+          style={{ width: GLOBE_HEIGHT - 16, height: GLOBE_HEIGHT - 16 }}
+          aria-hidden
+        />
+        <Placing />
+      </div>
+      <div className="space-y-3" aria-hidden>
+        {/* Measured against the real rail — 60px for the total, 183 for six
+            countries, 165 for four hosts and the concentration line — so the
+            bars are replaced in place rather than resized. */}
+        <div className="bg-raised/50 h-[60px] rounded-[4px] motion-safe:animate-pulse" />
+        <div className="bg-raised/50 h-[183px] rounded-[4px] motion-safe:animate-pulse" />
+        <div className="bg-raised/50 h-[165px] rounded-[4px] motion-safe:animate-pulse" />
+      </div>
+    </>
+  );
+}
+
+/**
+ * The one moving part: three dots over the globe while it is being placed.
+ *
+ * `motion-safe` on the animation rather than a conditional render, so a reader
+ * who has asked for reduced motion still gets the words — the message is the
+ * information and the movement is only the reassurance that it is still going.
+ */
+function Placing() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <p
+        role="status"
+        className="panel text-ink-secondary flex items-center gap-2 px-3 py-1.5 text-[11.5px] shadow-lg shadow-black/30"
+      >
+        Placing nodes
+        <span className="flex gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="bg-ink-faint size-1 rounded-full motion-safe:animate-pulse"
+              style={{ animationDelay: `${i * 160}ms` }}
+            />
+          ))}
+        </span>
+      </p>
+    </div>
   );
 }
 
@@ -506,7 +655,7 @@ export function DeveloperSources({
       what: "Nakamoto coefficient",
       where: "Each chain's own validator set",
       covered: coverage.decentralisation,
-      note: "Computed here rather than collected, so one definition applies everywhere. Most chains publish no reachable validator set.",
+      note: "Computed here rather than collected, so one definition applies everywhere. What counts as one party varies — validators, bakers, pool operators, council nodes — and each figure carries its own.",
     },
     {
       what: "Improvement proposals",

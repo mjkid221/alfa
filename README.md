@@ -572,7 +572,7 @@ a filter by virtual machine. None of it feeds the score.
 | Rollup stage | L2Beat | 21 of 85 |
 | Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
 | Monthly active developers | Electric Capital | 45 of 85 |
-| Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
+| Nakamoto coefficient | Each chain's own validator set | 20 of 85 |
 | Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
 | Node locations | bitnodes, ChainSafe nodewatch, Stakewiz, gmonads and seven chains' own endpoints | 12 of 85 |
 
@@ -588,6 +588,24 @@ from a tracker, because the definition varies: nakaflow.io publishes 10 for
 Solana where summing stake to a third gives 18, and a column mixing definitions
 would mean nothing. And improvement proposals are a verified per-chain registry,
 because no aggregator covers them — Boardroom and Tally both want a key.
+
+**What one party is differs between chains, and each figure says which.** The
+arithmetic is the same everywhere — sort by consensus weight, count until the
+running total passes a third — but the thing being counted is not. Most chains
+weigh staked balance per validator. Cardano's parties are pool *operators*
+rather than pools, so an exchange running twenty pools counts once, which is
+the more faithful reading of "who would have to agree". MultiversX allots a
+fixed 3,200 validator seats and weighs an identity by how many it holds, not by
+the stake behind them. Tron's are the 27 elected super representatives, the
+only accounts that produce blocks. Hedera's are council nodes, Tezos' bakers.
+
+Ethereum is the conspicuous absence. Its beacon chain has over a million
+validators, so a per-validator coefficient would be six figures and meaningless;
+the only useful unit is the operator behind them, and mapping validators to
+Lido, Coinbase or Kiln is precisely the attribution the one tracker that does it
+sells for a key. A blank is more honest than a guess. Sui's public fullnodes now
+answer "JSON-RPC has been deprecated" and THORChain's public nodes are all down,
+so both show nothing rather than a stale figure.
 
 The globe draws one point per **distinct location**, not per node: Bitcoin's
 26,500 nodes collapse to about 3,300 coordinates, because a datacentre rack is
@@ -646,6 +664,27 @@ and 52% of them are at Amazon. That figure needed the provider names folding
 first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
 Inc." and "Amazon.com", which had been quietly reporting 32%.
 
+**Not every column is a question every chain can answer, and the table says so.**
+Gas price, block gas limit, block fullness and contract size are EVM ideas, so
+43 of the 85 chains carried four dashes across them — which reads exactly like
+a reading that failed. A dash has to keep meaning "we could not get this", so
+the columns are grouped under a second header row that names who each block
+applies to: **Any machine**, **EVM chains only**, **Rollups only**. A column
+that does not apply to a chain renders "n/a" instead. And narrowing the machine
+filter to a non-EVM family drops the EVM block altogether, rather than spending
+four columns telling a reader who has just asked for Cosmos chains what they
+already know.
+
+**The globe panel no longer moves when you change chain.** Its height used to
+be set by whichever was taller, the globe or the list beside it, and the list
+varies: 570px on Bitcoin, 659px on eight chains, 851px on Monad, with everything
+below shifting each time. The globe now sets the height on its own, the list is
+capped to it, and the source line and live block readout — the two pieces that
+varied most — moved into a full-width footer that is one line on every chain.
+Switching now also *says* it is switching: the previous globe stays up, dimmed,
+under a "placing nodes" marker rather than silently standing in for a chain it
+is not.
+
 **The chain page is two pages.** Developer mode replaces it rather than adding
 to it: someone asking what it costs to deploy on a chain does not want a
 value-gap verdict above the answer, so the tier, the multiples and the peer
@@ -668,7 +707,7 @@ is the reason it exists — a chain's open proposals are titles and links, which
 cannot be a table cell, and they were being fetched and thrown away. So are the
 five years of monthly developer counts behind each sparkline, and two thirds of
 the decentralisation reading: the Nakamoto column shows the coefficient, but not
-that Solana has 676 validators and its largest holds 4.1% of stake.
+that Solana has 677 validators and its largest holds 4.0% of stake.
 
 **Monad's globe is live.** Every Monad block names the validator that proposed
 it, so the globe rings the place it came from as it happens, at a two-second

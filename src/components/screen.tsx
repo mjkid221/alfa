@@ -374,6 +374,7 @@ export function Screen() {
               feeMultipleMedian={feeMultipleMedian}
               developer={developerBySlug}
               mode={mode}
+              vm={vm}
             />
           </Panel>
         </ModeSwap>

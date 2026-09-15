@@ -385,29 +385,118 @@ export const PROPOSALS: Record<string, ProposalSource[]> = {
  * Computing it matters: nakaflow.io reports Solana at 10 where summing
  * `getVoteAccounts` to a third of stake gives 18. Both are defensible
  * definitions, and a column that mixed them would be meaningless — so the app
- * computes one definition everywhere it can, and only falls back to nakaflow's
- * number, attributed, where it cannot.
+ * computes one definition everywhere: sort the weights descending, count until
+ * the running total passes a third. Only the *weight* differs by chain, and
+ * `unit` below records what one unit of it is.
+ *
+ * ## Twenty chains, and where the other twelve came from
+ *
+ * This registry held eight until ChainflowSOL's nakaflow calculator was read
+ * properly rather than treated as a rival number. Its value is not the
+ * coefficients it publishes — those use its own definitions — it is the
+ * **endpoint list**, and almost all of it is keyless. Nine chains came straight
+ * from there (Monad, Avalanche, BNB Chain, Polygon PoS, Hyperliquid,
+ * MultiversX, Algorand, Cardano, Hedera) and three more from following the same
+ * idea into sources this app already talks to: Provenance is one more Cosmos
+ * LCD, Tron's super representatives come from the TronGrid endpoint beside the
+ * one the node map uses, and Tezos' bakers from tzkt.
+ *
+ * ## What is still absent, verified 16 September 2026
+ *
+ *   • **Ethereum** — nakaflow uses Rated Network, which needs a key. There is
+ *     no keyless substitute, and the reason is structural rather than a gap in
+ *     the search: the beacon chain has over a million validators and a
+ *     per-validator coefficient would be six figures, so the only meaningful
+ *     unit is the *operator* — and mapping validators to Lido, Coinbase or
+ *     Kiln is exactly the attribution Rated sells. A guess here would be worse
+ *     than a blank.
+ *   • **Sui** — `suix_getLatestSuiSystemState` still answers "JSON-RPC on
+ *     public fullnodes has been deprecated". nakaflow lists Sui and its code
+ *     calls that method, so its figure is running on a dead endpoint.
+ *   • **THORChain** — four thornode hosts tried (liquify, ninerealms,
+ *     thorswap, lavenderfive): two do not resolve, one 403s, one 503s.
+ *   • **PulseChain** — korkey.tech answers, but it publishes *individual
+ *     32-PLS validator balances* and was last updated a month ago. Counting
+ *     deposits rather than operators would put the coefficient in the hundreds
+ *     and mean nothing.
+ *   • **Single-sequencer rollups** — nakaflow hardcodes Base to 1, which is
+ *     arithmetically right and is not a measurement. It stays out of a computed
+ *     column; `stage` is where that fact belongs.
  */
 export type ValidatorSource =
   | { kind: "solana" }
   | { kind: "cosmos"; lcd: string }
   | { kind: "aptos" }
-  | { kind: "near" };
+  | { kind: "near" }
+  | { kind: "monad" }
+  | { kind: "avalanche" }
+  | { kind: "bnb" }
+  | { kind: "polygon" }
+  | { kind: "hyperliquid" }
+  | { kind: "multiversx" }
+  | { kind: "algorand" }
+  | { kind: "cardano" }
+  | { kind: "hedera" }
+  | { kind: "tron" }
+  | { kind: "tezos" };
+
+/**
+ * What one unit of weight is, per source.
+ *
+ * The arithmetic is identical everywhere; the thing being counted is not. Three
+ * of these count something other than a staking validator, and saying so is the
+ * difference between a comparable column and a misleading one:
+ *
+ *   • **MultiversX** counts *seats*. It has a fixed 3,200 validator slots and
+ *     consensus weight is the number of them an operator holds, not the stake
+ *     behind them — so the weights are seat counts and the parties are
+ *     identities.
+ *   • **Cardano** counts *operators*, not pools. balanceanalytics' `mavdata`
+ *     already folds an operator's pools together, which is the more faithful
+ *     reading of this app's own definition — "the number of parties who would
+ *     have to agree" — since Binance's many pools are one party.
+ *   • **Tron** counts the 27 elected super representatives, who are the only
+ *     accounts that produce blocks, weighted by the votes that elected them.
+ */
+export const VALIDATOR_UNIT: Record<ValidatorSource["kind"], string> = {
+  solana: "validators",
+  cosmos: "validators",
+  aptos: "validators",
+  near: "validators",
+  monad: "validators",
+  avalanche: "validators",
+  bnb: "validators",
+  polygon: "validators",
+  hyperliquid: "validators",
+  multiversx: "operators",
+  algorand: "accounts",
+  cardano: "pool operators",
+  hedera: "council nodes",
+  tron: "super representatives",
+  tezos: "bakers",
+};
 
 export const VALIDATOR_SOURCE: Record<string, ValidatorSource> = {
   Solana: { kind: "solana" },
   Aptos: { kind: "aptos" },
   Near: { kind: "near" },
-  // Sui is absent deliberately: its public fullnodes answer
-  // "JSON-RPC has been deprecated, migrate to gRPC or GraphQL", and its GraphQL
-  // host did not resolve when tried. THORChain is absent for the same reason —
-  // it does not serve the Cosmos staking module and its own node API was
-  // unreachable. Both show no coefficient rather than a stale one.
+  Monad: { kind: "monad" },
+  "Avalanche C-Chain": { kind: "avalanche" },
+  "BNB Chain": { kind: "bnb" },
+  "Polygon PoS": { kind: "polygon" },
+  Hyperliquid: { kind: "hyperliquid" },
+  Multiversx: { kind: "multiversx" },
+  Algorand: { kind: "algorand" },
+  Cardano: { kind: "cardano" },
+  Hedera: { kind: "hedera" },
+  Tron: { kind: "tron" },
+  Tezos: { kind: "tezos" },
   Osmosis: { kind: "cosmos", lcd: "https://lcd.osmosis.zone" },
   Injective: { kind: "cosmos", lcd: "https://lcd.injective.network" },
   "Sei Network": { kind: "cosmos", lcd: "https://sei-api.polkachu.com" },
   Kava: { kind: "cosmos", lcd: "https://api.kava.io" },
   dYdX: { kind: "cosmos", lcd: "https://dydx-rest.publicnode.com" },
+  Provenance: { kind: "cosmos", lcd: "https://api.provenance.io" },
 };
 
 /**

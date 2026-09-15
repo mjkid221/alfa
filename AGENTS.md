@@ -176,8 +176,46 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   pushed January 2026, Solana's March 2025).
 - Nakamoto is **computed** from each chain's own validator set, never collected:
   nakaflow.io says 10 for Solana where summing stake to a third gives 18. One
-  definition everywhere. Sui deprecated the JSON-RPC that served it and
-  THORChain serves neither, so both are absent by design — 8 chains in total.
+  definition everywhere — sort the weights, count until the running total passes
+  a third. **20 chains**, up from 8.
+- **The other twelve came out of nakaflow's source, not its dashboard.**
+  ChainflowSOL's calculator was treated as a rival number for months when its
+  real value is its *endpoint list*, and almost all of it is keyless. Nine came
+  straight from there — Monad, Avalanche, BNB Chain, Polygon PoS, Hyperliquid,
+  MultiversX, Algorand, Cardano, Hedera — and three from following the same idea
+  into sources this app already talks to: Provenance is one more Cosmos LCD,
+  Tron's 27 super representatives come from TronGrid beside the endpoint the
+  node map uses, and Tezos' bakers from tzkt. The lesson is the nodewatch one
+  again: read the thing, do not judge it by its front page.
+- **Monad's validator set is on Monad**, in the staking precompile at
+  `0x…1000`. `eth_call` with selector `fb29b729` pages the validator ids (100 a
+  page, `[done, next, offset, length, …ids]`) and `2b6d639a` returns a struct
+  whose **seventh word is the stake**. 196 validators, which is what gmonads and
+  BitCtrl independently observe. It costs one call per validator, so **retry**:
+  a first pass without backoff lost 17 to rate limiting and reported 17 instead
+  of 20, and a dropped validator silently *lowers* the coefficient.
+- **Weight is not always stake, and the figure has to say so.** `VALIDATOR_UNIT`
+  carries what one party is. MultiversX weighs identities by how many of a fixed
+  3,200 validator *seats* they hold; Cardano's rows are pool **operators**, not
+  pools, which is the more faithful reading of "parties who would have to
+  agree" since an exchange's twenty pools are one party; Tron counts the 27
+  elected super representatives by the votes behind them. The chain page's
+  labels are driven by this field — never hard-code "validators".
+- **Still absent, and why** (checked 16 September 2026): **Ethereum** needs a
+  key — nakaflow uses Rated Network, and the reason is structural, since a
+  million beacon-chain validators make the operator the only meaningful unit and
+  that attribution is what Rated sells. **Sui**'s `suix_getLatestSuiSystemState`
+  still answers "JSON-RPC on public fullnodes has been deprecated" — nakaflow
+  lists Sui and calls that method, so its figure runs on a dead endpoint.
+  **THORChain**: four thornode hosts tried, two do not resolve, one 403s, one
+  503s. **PulseChain** publishes individual 32-PLS deposit balances a month
+  stale, which would count deposits rather than operators. **Single-sequencer
+  rollups**: nakaflow hardcodes Base to 1, which is arithmetically right and is
+  not a measurement — it stays out of a computed column, and `stage` carries it.
+- **tzkt flattens a single `select`.** `?select=stakingBalance` returns
+  `[12996315238, …]`, not `[{stakingBalance: …}]`. Read as objects every baker
+  weighed zero, `nakamotoOf` correctly discarded them all, and Tezos went
+  *missing* rather than wrong — the failure mode that does not announce itself.
 - Improvement proposals have no aggregator. `domain/chain-tech.ts` is a verified
   per-chain registry: 32 GitHub repos (Monad's is `monad-crypto/MIPs`, directory
   `MIPs`, case-sensitive) and 17 Discourse forums, whose `/latest.json` is
@@ -304,6 +342,35 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   in the file's docblock.
 - `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
   published APIs. First thing to check if a developer panel goes blank.
+- **The globe panel's height is pinned, because the rail used to set it.**
+  Measured at 1440px: 570px on Bitcoin, 659px on eight chains, 851px on Monad —
+  a 281px swing that moved everything below it every time the reader changed
+  chain. `GLOBE_HEIGHT` now fixes the grid row and caps the rail, and the source
+  line and live readout moved out of the rail into a full-width footer, being
+  the two pieces that varied most. 460 rather than 400 because the cap has to
+  clear the tallest rail (447px — Ripple, Flow and Aptos, whose totals run to a
+  second line) or it hides the host concentration sentence the list exists for.
+  Verified 26 samples across twelve chains, loading frames included: one
+  distinct height, swing 0.00.
+- **Reserve the footer as a real blank line, not a `min-height`.** Hanging the
+  footer row off `data` made the first paint 39.5px short; replacing it with
+  `min-h-[17px]` was still 10.5px out, because with `border-box` the height has
+  to cover the padding and border too. A `<p>` holding `&nbsp;` is exactly one
+  line by construction.
+- **`placeholderData` is silent on its own.** Keeping the previous chain's globe
+  while the next loads is right, but without `isPlaceholderData && isFetching`
+  driving a visible state the reader clicks Tron and watches Bitcoin for two
+  more seconds with no signal. Some of these sources take a while.
+- **A dash and "n/a" are different claims and the developer table now keeps
+  them apart.** Gas price, block limit, fullness and contract size are EVM
+  ideas, so 43 of the 85 carried four dashes that read exactly like a failed
+  fetch. Columns declare a `group` (`universal` / `evm` / `rollup`) and an
+  `applies` predicate; the group spans a second header row — "Any machine",
+  "EVM chains only", "Rollups only" — and a column that does not apply renders
+  "n/a". Groups must stay **contiguous** in the column list or the spanning
+  header splits. Narrowing the VM filter to a non-EVM family drops the EVM block
+  outright rather than printing four columns of "n/a" at a reader who just asked
+  for Cosmos chains.
 - A canvas sized in pixels inside a grid item deadlocks on resize: the item's
   `min-width: auto` is the canvas's own width, so `useMeasure` keeps reporting
   the old size and it never shrinks. `NodeGlobe`'s wrapper needs `min-w-0`, and

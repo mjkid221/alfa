@@ -33,7 +33,7 @@ import { divergingHue } from "~/lib/palette";
 import { capLabel, capShort, type CapBasis } from "~/lib/valuation-basis";
 import type { ChainSnapshot } from "~/server/domain/types";
 import type { DeveloperMetrics } from "~/server/domain/developer";
-import type { ScreenMode } from "~/lib/screen-mode";
+import type { ScreenMode, VmFilter } from "~/lib/screen-mode";
 
 /**
  * The chain column: index, avatar, name and symbol with the tier badge. Wide
@@ -68,11 +68,54 @@ type SortKey =
   | "contractSize"
   | "stage";
 
+/**
+ * Which chains a group of columns means anything for.
+ *
+ * Developer mode's columns do not all apply to the same universe, and until
+ * this existed the table did not say so: gas price, block limit, block
+ * fullness and contract size are EVM concepts, so 43 of the 85 chains carried
+ * a dash across four columns that read exactly like a failed fetch. A dash has
+ * to keep meaning "we could not read this" — which is why "this does not exist
+ * here" needed somewhere else to live.
+ *
+ * Groups are contiguous by construction: the header row spans them, so the
+ * column order below is arranged to keep each group together.
+ */
+type ColumnGroup = "universal" | "evm" | "rollup";
+
+const COLUMN_GROUPS: Record<ColumnGroup, { label: string; note: string }> = {
+  // "Any machine" rather than "every chain": the groups describe which chains a
+  // question *applies* to, not how many of them have been answered. A header
+  // reading "every chain" over a Nakamoto column that is blank for 65 of them
+  // contradicts itself on sight — coverage is the sources panel's job, and this
+  // row exists to say that gas is an EVM idea and a stage is a rollup's.
+  universal: {
+    label: "Any machine",
+    note: "Asked of every chain in the universe, whatever it runs. How many can answer is a separate question, stated under each source.",
+  },
+  evm: {
+    label: "EVM chains only",
+    note: "Gas and contract size are EVM concepts. Chains running another machine have no equivalent, which is not the same as a reading that failed.",
+  },
+  rollup: {
+    label: "Rollups only",
+    note: "L2Beat's ladder describes how much of a rollup's security is still the operator's promise. An L1 has no stage.",
+  },
+};
+
 interface Column {
   key: SortKey;
   label: string;
   /** Shown on hover, explaining what the column actually measures. */
   hint?: string;
+  /** Which applicability group the column sits under. Developer mode only. */
+  group?: ColumnGroup;
+  /**
+   * Whether this column is a question worth asking of this chain. False renders
+   * "n/a" rather than a dash — the difference between a chain that has no such
+   * concept and one whose node did not answer.
+   */
+  applies?: (chain: ChainSnapshot, dev: DeveloperMetrics | null) => boolean;
   /** Opens the full definition. Every scored column carries one. */
   term?: GlossaryTerm;
   align: "left" | "right";
@@ -90,6 +133,7 @@ export function ChainTable({
   feeMultipleMedian,
   developer,
   mode = "research",
+  vm = "any",
   className,
 }: {
   chains: readonly ChainSnapshot[];
@@ -101,6 +145,12 @@ export function ChainTable({
    */
   developer?: ReadonlyMap<string, DeveloperMetrics>;
   mode?: ScreenMode;
+  /**
+   * The machine family the screen is narrowed to. The table needs it to decide
+   * whether the EVM-only columns are worth the width: a reader who has asked
+   * for Cosmos chains has asked, in effect, for four fewer columns.
+   */
+  vm?: VmFilter;
   className?: string;
 }) {
   const router = useRouter();
@@ -365,6 +415,12 @@ export function ChainTable({
    * half the universe has no reachable node and most have no published
    * validator set.
    */
+  /**
+   * Developer mode's columns, ordered so that each applicability group is
+   * contiguous — every chain, then the EVM-only block, then the rollup-only
+   * one. The order is what lets the header span them, and the spanning header
+   * is what stops four columns of dashes reading as four failures.
+   */
   const developerColumns = useMemo<Column[]>(
     () => [
       {
@@ -372,6 +428,7 @@ export function ChainTable({
         label: "VM",
         hint: "Virtual machine. From L2Beat where it tracks the chain, otherwise proven by the chain answering an Ethereum RPC.",
         term: "virtualMachine",
+        group: "universal",
         align: "left",
         width: 128,
         // Sorted by name rather than a number, so this keeps sorting stable and
@@ -381,99 +438,7 @@ export function ChainTable({
           dev?.vm ? (
             <span className="text-ink-secondary text-[12.5px]">{dev.vm}</span>
           ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
-          ),
-      },
-      {
-        key: "gasPrice",
-        label: "Gas price",
-        hint: "Current gas price, read from a node on the chain itself. Quoted in wei or gwei, whichever keeps the figure readable.",
-        term: "gasPrice",
-        align: "right",
-        width: 128,
-        value: (_chain, dev) => dev?.gas?.gasPriceGwei ?? null,
-        render: (_chain, { dev }) => <Gas value={dev?.gas?.gasPriceGwei} />,
-      },
-      {
-        key: "gasLimit",
-        label: "Block gas limit",
-        hint: "How much gas fits in one block. Blank where the chain does not meaningfully have a limit.",
-        term: "gasLimit",
-        align: "right",
-        width: 148,
-        value: (_chain, dev) => dev?.gas?.gasLimit ?? null,
-        render: (_chain, { dev }) =>
-          dev?.gas?.gasLimit ? (
-            <span className="tnum text-[12.5px]">
-              {formatCount(dev.gas.gasLimit)}
-            </span>
-          ) : dev?.gas?.limitIsSentinel ? (
-            // Said in words, because a dash here would mean the same as the dash
-            // on a chain whose node never answered — and they are opposite facts.
-            <span className="text-ink-muted text-[12.5px]">No cap</span>
-          ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
-          ),
-      },
-      {
-        key: "gasUsedPct",
-        label: "Block full",
-        hint: "How much of the last block's gas limit was used.",
-        term: "gasLimit",
-        align: "right",
-        width: 120,
-        value: (_chain, dev) => dev?.gas?.gasUsedPct ?? null,
-        render: (_chain, { dev }) =>
-          dev?.gas?.gasUsedPct !== null &&
-          dev?.gas?.gasUsedPct !== undefined ? (
-            <PercentileBar value={dev.gas.gasUsedPct} width={64} />
-          ) : dev?.gas?.limitIsSentinel ? (
-            // Fullness is a fraction of the limit, so a chain without one has no
-            // fullness either — for the same reason, not a missing reading.
-            <span className="text-ink-muted text-[12.5px]">n/a</span>
-          ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
-          ),
-      },
-      {
-        key: "contractSize",
-        label: "Contract limit",
-        hint: "Largest contract that can be deployed, in bytes. A protocol constant, not a live reading.",
-        term: "contractSize",
-        align: "right",
-        width: 132,
-        value: (_chain, dev) => dev?.contractSizeLimit ?? null,
-        render: (_chain, { dev }) =>
-          dev?.contractSizeLimit ? (
-            // Written out, not abbreviated: 24,576 is a constant an EVM
-            // developer knows by sight, and "24.6KB" throws that away.
-            <span className="tnum text-[12.5px]">
-              {formatInteger(dev.contractSizeLimit)}
-              <span className="text-ink-faint ml-1 text-[10.5px]">B</span>
-            </span>
-          ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
-          ),
-      },
-      {
-        key: "stage",
-        label: "Stage",
-        hint: "L2Beat's decentralisation ladder for rollups. Blank for chains it does not apply to.",
-        term: "rollupStage",
-        align: "left",
-        width: 116,
-        value: (_chain, dev) => {
-          // Sorted by how far up the ladder, so Stage 2 leads.
-          const match = /(\d)/.exec(dev?.stage ?? "");
-          return match ? Number(match[1]) : null;
-        },
-        render: (_chain, { dev }) =>
-          dev?.stage ? (
-            <span className="border-hairline text-ink-secondary rounded-full border px-1.5 py-0.5 text-[10.5px] tracking-wide uppercase">
-              {dev.stage}
-            </span>
-          ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
+            <Missing />
           ),
       },
       {
@@ -481,6 +446,7 @@ export function ChainTable({
         label: "Devs 30d",
         hint: "Monthly active developers, from Electric Capital. Covers 45 of the 85 chains.",
         term: "devActivity",
+        group: "universal",
         align: "right",
         width: 132,
         value: (_chain, dev) => dev?.developers?.monthlyActive ?? null,
@@ -493,34 +459,196 @@ export function ChainTable({
               <Delta value={dev.developers.changeYoy} />
             </span>
           ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
+            <Missing />
           ),
       },
       {
         key: "nakamoto",
         label: "Nakamoto",
-        hint: "Smallest number of validators controlling more than a third of stake. Computed from each chain's own validator set.",
+        hint: "Smallest number of parties controlling more than a third of consensus weight, computed from each chain's own validator set. What one party is varies — hover a figure to see.",
         term: "nakamoto",
+        group: "universal",
         align: "right",
         width: 124,
         value: (_chain, dev) => dev?.decentralisation?.nakamoto ?? null,
         render: (_chain, { dev }) =>
           dev?.decentralisation ? (
-            <span className="tnum text-[12.5px]">
+            // The unit is in the title rather than the cell: a coefficient of 7
+            // over Cardano's pool *operators* and one over Osmosis' validators
+            // are answers to the same question about different objects, and the
+            // column cannot say so in four characters.
+            <span
+              className="tnum text-[12.5px]"
+              title={`${dev.decentralisation.nakamoto} of ${formatCount(dev.decentralisation.validators)} ${dev.decentralisation.unit} hold more than a third`}
+            >
               {dev.decentralisation.nakamoto}
             </span>
           ) : (
-            <span className="text-ink-faint text-[12.5px]">—</span>
+            <Missing />
+          ),
+      },
+      {
+        key: "gasPrice",
+        label: "Gas price",
+        hint: "Current gas price, read from a node on the chain itself. Quoted in wei or gwei, whichever keeps the figure readable.",
+        term: "gasPrice",
+        group: "evm",
+        align: "right",
+        width: 128,
+        applies: (_chain, dev) => isEvmRow(dev),
+        value: (_chain, dev) => dev?.gas?.gasPriceGwei ?? null,
+        render: (_chain, { dev }) => <Gas value={dev?.gas?.gasPriceGwei} />,
+      },
+      {
+        key: "gasLimit",
+        label: "Block gas limit",
+        hint: "How much gas fits in one block. Blank where the chain does not meaningfully have a limit.",
+        term: "gasLimit",
+        group: "evm",
+        align: "right",
+        width: 148,
+        applies: (_chain, dev) => isEvmRow(dev),
+        value: (_chain, dev) => dev?.gas?.gasLimit ?? null,
+        render: (_chain, { dev }) =>
+          dev?.gas?.gasLimit ? (
+            <span className="tnum text-[12.5px]">
+              {formatCount(dev.gas.gasLimit)}
+            </span>
+          ) : dev?.gas?.limitIsSentinel ? (
+            // Said in words, because a dash here would mean the same as the dash
+            // on a chain whose node never answered — and they are opposite facts.
+            <span
+              className="text-ink-muted text-[12.5px]"
+              title="This chain declares no block ceiling: Arbitrum Nitro and the zkSync stack report a sentinel where the field is required."
+            >
+              No cap
+            </span>
+          ) : (
+            <Missing />
+          ),
+      },
+      {
+        key: "gasUsedPct",
+        label: "Block full",
+        hint: "How much of the last block's gas limit was used.",
+        term: "gasLimit",
+        group: "evm",
+        align: "right",
+        width: 120,
+        applies: (_chain, dev) => isEvmRow(dev),
+        value: (_chain, dev) => dev?.gas?.gasUsedPct ?? null,
+        render: (_chain, { dev }) =>
+          dev?.gas?.gasUsedPct !== null &&
+          dev?.gas?.gasUsedPct !== undefined ? (
+            <PercentileBar value={dev.gas.gasUsedPct} width={64} />
+          ) : dev?.gas?.limitIsSentinel ? (
+            // Fullness is a fraction of the limit, so a chain without one has no
+            // fullness either — for the same reason, not a missing reading.
+            <span
+              className="text-ink-muted text-[12.5px]"
+              title="Fullness is a fraction of the block limit, and this chain declares none."
+            >
+              n/a
+            </span>
+          ) : (
+            <Missing />
+          ),
+      },
+      {
+        key: "contractSize",
+        label: "Contract limit",
+        hint: "Largest contract that can be deployed, in bytes. A protocol constant, not a live reading.",
+        term: "contractSize",
+        group: "evm",
+        align: "right",
+        width: 132,
+        applies: (_chain, dev) => isEvmRow(dev),
+        value: (_chain, dev) => dev?.contractSizeLimit ?? null,
+        render: (_chain, { dev }) =>
+          dev?.contractSizeLimit ? (
+            // Written out, not abbreviated: 24,576 is a constant an EVM
+            // developer knows by sight, and "24.6KB" throws that away.
+            <span
+              className="tnum text-[12.5px]"
+              title={
+                dev.contractSizeSource === "measured"
+                  ? "Measured against this chain."
+                  : "EIP-170's default, assumed: this chain's public RPC refused the probe."
+              }
+            >
+              {formatInteger(dev.contractSizeLimit)}
+              <span className="text-ink-faint ml-1 text-[10.5px]">B</span>
+              {dev.contractSizeSource === "assumed" && (
+                <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
+              )}
+            </span>
+          ) : (
+            <Missing />
+          ),
+      },
+      {
+        key: "stage",
+        label: "Stage",
+        hint: "L2Beat's decentralisation ladder for rollups. Blank for chains it does not apply to.",
+        term: "rollupStage",
+        group: "rollup",
+        align: "left",
+        width: 116,
+        // A rollup is a chain L2Beat tracks at all; an L1 is not missing a
+        // stage, it has nowhere to stand on the ladder.
+        applies: (chain) => chain.layer === "L2",
+        value: (_chain, dev) => {
+          // Sorted by how far up the ladder, so Stage 2 leads.
+          const match = /(\d)/.exec(dev?.stage ?? "");
+          return match ? Number(match[1]) : null;
+        },
+        render: (_chain, { dev }) =>
+          dev?.stage ? (
+            <span className="border-hairline text-ink-secondary rounded-full border px-1.5 py-0.5 text-[10.5px] tracking-wide uppercase">
+              {dev.stage}
+            </span>
+          ) : (
+            <Missing />
           ),
       },
     ],
     [],
   );
 
-  const columns = mode === "developer" ? developerColumns : researchColumns;
+  /*
+   * Narrowing to a non-EVM family drops the EVM-only block outright.
+   *
+   * Rendering four columns of "n/a" to a reader who has just said "show me
+   * Cosmos chains" spends 528px of a horizontally-scrolling table restating
+   * the filter they set. "any" keeps them, because a mixed table is exactly
+   * where the distinction between n/a and a dash earns its keep.
+   */
+  const columns = useMemo(() => {
+    if (mode !== "developer") return researchColumns;
+    if (vm === "any" || vm === "EVM") return developerColumns;
+    return developerColumns.filter((column) => column.group !== "evm");
+  }, [mode, vm, developerColumns, researchColumns]);
 
   const tableWidth =
     CHAIN_COLUMN_WIDTH + columns.reduce((sum, column) => sum + column.width, 0);
+
+  /**
+   * Contiguous runs of columns sharing a group, for the spanning header.
+   *
+   * Built by walking the resolved column list rather than declared alongside
+   * it, so a column reordered into the wrong place produces two short spans —
+   * visibly wrong — instead of a header that silently spans the wrong columns.
+   */
+  const groups = useMemo(() => {
+    const runs: { id: ColumnGroup; span: number }[] = [];
+    for (const column of columns) {
+      const id = column.group ?? "universal";
+      const last = runs[runs.length - 1];
+      if (last?.id === id) last.span += 1;
+      else runs.push({ id, span: 1 });
+    }
+    return runs;
+  }, [columns]);
 
   // Resolved after the columns exist: a stored key no column has any more
   // falls back to the default rather than sorting by nothing.
@@ -593,6 +721,37 @@ export function ChainTable({
             ))}
           </colgroup>
           <thead>
+            {/*
+              Developer mode gets a second header tier naming which universe
+              each block of columns describes. Without it the table asserts, by
+              layout alone, that every column is a question every chain can
+              answer — and then prints 43 rows of dashes under four that are
+              not. Research mode has no such split and gets no extra row.
+            */}
+            {groups.length > 1 && (
+              <tr className="border-hairline/50 border-b">
+                <th
+                  scope="col"
+                  style={{ width: CHAIN_COLUMN_WIDTH }}
+                  className="bg-surface sticky left-0 z-20 px-5 pt-2.5 pb-1"
+                >
+                  <span className="sr-only">Chain</span>
+                </th>
+                {groups.map((group) => (
+                  <th
+                    key={group.id}
+                    scope="colgroup"
+                    colSpan={group.span}
+                    title={COLUMN_GROUPS[group.id].note}
+                    className="text-ink-faint/80 px-3 pt-2.5 pb-1 text-left text-[9.5px] font-medium tracking-[0.08em] whitespace-nowrap uppercase last:pr-6"
+                  >
+                    <span className="border-hairline/70 border-b pb-1">
+                      {COLUMN_GROUPS[group.id].label}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            )}
             <tr className="border-hairline border-b">
               <th
                 scope="col"
@@ -717,10 +876,21 @@ export function ChainTable({
                       column.align === "right" ? "text-right" : "text-left",
                     )}
                   >
-                    {column.render(chain, {
-                      median: feeMultipleMedian,
-                      dev: developer?.get(chain.slug) ?? null,
-                    })}
+                    {(() => {
+                      const dev = developer?.get(chain.slug) ?? null;
+                      return column.applies && !column.applies(chain, dev) ? (
+                        <NotApplicable
+                          reason={
+                            COLUMN_GROUPS[column.group ?? "universal"].note
+                          }
+                        />
+                      ) : (
+                        column.render(chain, {
+                          median: feeMultipleMedian,
+                          dev,
+                        })
+                      );
+                    })()}
                   </td>
                 ))}
               </tr>
@@ -743,6 +913,44 @@ export function ChainTable({
  * name one unit for everybody. Sorting is unaffected: `Column.value` reads the
  * raw number.
  */
+/**
+ * Whether the EVM-only columns are a question worth asking of this row.
+ *
+ * Deliberately the same test the server uses to decide whether to populate
+ * `contractSizeLimit` at all, rather than a second opinion about what counts as
+ * an EVM chain — two rules that could disagree would eventually disagree.
+ */
+function isEvmRow(dev: DeveloperMetrics | null): boolean {
+  return /evm/i.test(dev?.vm ?? "");
+}
+
+/** A reading that should exist and does not. Reserved for exactly that. */
+function Missing() {
+  return (
+    <span
+      className="text-ink-faint text-[12.5px]"
+      title="No reading available."
+    >
+      —
+    </span>
+  );
+}
+
+/**
+ * A column that does not apply to this chain.
+ *
+ * Visually quieter than a dash and says a different thing. The distinction is
+ * the point: a Solana row showing "—" under Block gas limit claims we tried and
+ * failed, when the truth is that Solana does not price execution in gas.
+ */
+function NotApplicable({ reason }: { reason: string }) {
+  return (
+    <span className="text-ink-faint/60 text-[11.5px]" title={reason}>
+      n/a
+    </span>
+  );
+}
+
 function Gas({ value }: { value: number | null | undefined }) {
   const gas = formatGas(value);
   if (gas.unit === null) {
@@ -951,40 +1159,19 @@ const scoreText = (value: number | null) =>
   value === null ? "—" : Math.round(value).toString();
 
 /** The same six slots, asking the engineering question instead. */
+/**
+ * The same applicability rule as the table, on a phone.
+ *
+ * A card has no column headers to group, so the distinction has to live in the
+ * value: "n/a" where the chain has no such concept, "—" where a reading is
+ * missing. The four EVM-only stats are dropped from a non-EVM card outright —
+ * on 390px there is no width to spend restating what the VM stat already says.
+ */
 function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
+  const evm = isEvmRow(dev ?? null);
   return (
     <>
       <MobileStat label="VM" value={dev?.vm ?? "—"} />
-      <MobileStat
-        label="Gas price"
-        value={formatGasWithUnit(dev?.gas?.gasPriceGwei)}
-      />
-      <MobileStat
-        label="Block limit"
-        value={
-          dev?.gas?.gasLimit
-            ? formatCount(dev.gas.gasLimit)
-            : dev?.gas?.limitIsSentinel
-              ? "No cap"
-              : "—"
-        }
-      />
-      <MobileStat
-        label="Contract limit"
-        value={
-          dev?.contractSizeLimit
-            ? `${formatInteger(dev.contractSizeLimit)} B`
-            : "—"
-        }
-      />
-      <MobileStat
-        label="Block full"
-        value={
-          dev?.gas?.gasUsedPct === null || dev?.gas?.gasUsedPct === undefined
-            ? "—"
-            : `${dev.gas.gasUsedPct.toFixed(0)}%`
-        }
-      />
       <MobileStat
         label="Devs 30d"
         value={
@@ -996,6 +1183,43 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
         label="Nakamoto"
         value={dev?.decentralisation?.nakamoto?.toString() ?? "—"}
       />
+      {evm && (
+        <>
+          <MobileStat
+            label="Gas price"
+            value={formatGasWithUnit(dev?.gas?.gasPriceGwei)}
+          />
+          <MobileStat
+            label="Block limit"
+            value={
+              dev?.gas?.gasLimit
+                ? formatCount(dev.gas.gasLimit)
+                : dev?.gas?.limitIsSentinel
+                  ? "No cap"
+                  : "—"
+            }
+          />
+          <MobileStat
+            label="Contract limit"
+            value={
+              dev?.contractSizeLimit
+                ? `${formatInteger(dev.contractSizeLimit)} B`
+                : "—"
+            }
+          />
+          <MobileStat
+            label="Block full"
+            value={
+              dev?.gas?.gasUsedPct === null ||
+              dev?.gas?.gasUsedPct === undefined
+                ? dev?.gas?.limitIsSentinel
+                  ? "n/a"
+                  : "—"
+                : `${dev.gas.gasUsedPct.toFixed(0)}%`
+            }
+          />
+        </>
+      )}
     </>
   );
 }

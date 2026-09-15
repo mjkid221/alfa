@@ -3,6 +3,11 @@
 import { ArrowUpRight } from "lucide-react";
 
 import { NodeGlobe } from "~/components/chart/node-globe";
+import {
+  GLOBE_HEIGHT,
+  GlobeSkeleton,
+  useLiveProposer,
+} from "~/components/developer-panels";
 import { Sparkline } from "~/components/chart/sparkline";
 import { Explain } from "~/components/ui/explain";
 import { ChainAvatar, Panel } from "~/components/ui/primitives";
@@ -14,7 +19,6 @@ import {
   formatPercent,
 } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
-import { useLiveProposer } from "~/components/developer-panels";
 import { api } from "~/trpc/react";
 
 /**
@@ -50,6 +54,11 @@ import { api } from "~/trpc/react";
  * says nothing where the filename says nothing. Forum proposals arrive with
  * genuine titles and pass through untouched.
  */
+/** "pool operators" → "Pool operators". The units are written lower-case. */
+function sentenceCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function readableTitle(id: string, title: string): string | null {
   const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (key(title) === key(id)) return null;
@@ -192,23 +201,32 @@ export function ChainDeveloper({
         {decentralisation && (
           <Section title="Who runs it">
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-3">
+              {/*
+                Every label here is driven by `unit` rather than written out.
+                Hard-coding "validators" and "of all stake" was fine while this
+                covered eight proof-of-stake chains and is wrong now that it
+                covers twenty: Cardano's parties are pool operators, Tron's are
+                elected representatives weighted by votes, and MultiversX's are
+                identities weighted by validator seats rather than by stake at
+                all.
+              */}
               <Figure
                 label="Nakamoto coefficient"
                 term="nakamoto"
                 value={formatInteger(decentralisation.nakamoto)}
-                note="to halt the chain"
+                note={`${decentralisation.unit} to halt the chain`}
               />
               <Figure
-                label="Validators"
+                label={sentenceCase(decentralisation.unit)}
                 value={formatInteger(decentralisation.validators)}
                 note="in the active set"
               />
               <Figure
-                label="Largest validator"
+                label="Largest share"
                 value={formatPercent(decentralisation.topStakePct, {
                   signed: false,
                 })}
-                note="of all stake"
+                note="held by one of them"
               />
             </div>
           </Section>
@@ -426,7 +444,7 @@ export function ChainDeveloperView({
 
       <ChainDeveloper slug={slug} name={name} />
 
-      {hasGlobe && map.data && (
+      {hasGlobe && (
         <Panel
           title={
             <span className="inline-flex items-center gap-1.5">
@@ -437,65 +455,85 @@ export function ChainDeveloperView({
           subtitle="One point per distinct location, not per node. Drag the globe to turn it."
           bodyClassName="px-4 pt-2 pb-4"
         >
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
-            <NodeGlobe map={map.data} height={380} pulse={live.pulse} />
-            <div className="space-y-3">
-              <div>
-                <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
-                  {map.data.unit}
-                </p>
-                <p className="tnum mt-0.5 text-[18px] font-medium">
-                  {formatInteger(map.data.totalNodes)}
-                </p>
-                <p className="text-ink-faint text-[11px] leading-snug">
-                  across {formatInteger(map.data.points.length)} locations
-                </p>
-              </div>
-              {map.data.countries.length > 0 && (
-                <ul className="space-y-1">
-                  {map.data.countries.slice(0, 6).map((row) => (
-                    <li
-                      key={row.country}
-                      className="flex items-baseline gap-2 text-[11.5px]"
+          {/*
+            Rendered from the moment the chain is known to have a globe, not
+            from the moment the coordinates land. Waiting for `map.data` meant
+            a whole panel appeared several seconds into the page and shoved
+            everything under it down — and said nothing in the meantime, which
+            on the slower sources is most of the wait.
+          */}
+          <div
+            className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]"
+            style={{ minHeight: GLOBE_HEIGHT }}
+          >
+            {!map.data ? (
+              <GlobeSkeleton />
+            ) : (
+              <>
+                <NodeGlobe
+                  map={map.data}
+                  height={GLOBE_HEIGHT}
+                  pulse={live.pulse}
+                />
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
+                      {map.data.unit}
+                    </p>
+                    <p className="tnum mt-0.5 text-[18px] font-medium">
+                      {formatInteger(map.data.totalNodes)}
+                    </p>
+                    <p className="text-ink-faint text-[11px] leading-snug">
+                      across {formatInteger(map.data.points.length)} locations
+                    </p>
+                  </div>
+                  {map.data.countries.length > 0 && (
+                    <ul className="space-y-1">
+                      {map.data.countries.slice(0, 6).map((row) => (
+                        <li
+                          key={row.country}
+                          className="flex items-baseline gap-2 text-[11.5px]"
+                        >
+                          <span className="text-ink-secondary truncate">
+                            {row.country}
+                          </span>
+                          <span className="tnum text-ink-faint ml-auto">
+                            {formatInteger(row.count)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {live.block !== null && (
+                    <div className="border-hairline border-t pt-2.5">
+                      <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
+                        Live
+                      </p>
+                      <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
+                        Block {formatInteger(live.block)}
+                      </p>
+                      <p className="text-ink-faint text-[11px] leading-snug">
+                        {live.place
+                          ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
+                          : "proposer not registered under a published address"}
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="text-ink-faint text-[11px] leading-relaxed">
+                    {map.data.observed ? "Observed by " : ""}
+                    <a
+                      href={map.data.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:text-ink-secondary underline underline-offset-2"
                     >
-                      <span className="text-ink-secondary truncate">
-                        {row.country}
-                      </span>
-                      <span className="tnum text-ink-faint ml-auto">
-                        {formatInteger(row.count)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {live.block !== null && (
-                <div className="border-hairline border-t pt-2.5">
-                  <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
-                    Live
-                  </p>
-                  <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
-                    Block {formatInteger(live.block)}
-                  </p>
-                  <p className="text-ink-faint text-[11px] leading-snug">
-                    {live.place
-                      ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
-                      : "proposer not registered under a published address"}
+                      {map.data.source}
+                    </a>
                   </p>
                 </div>
-              )}
-
-              <p className="text-ink-faint text-[11px] leading-relaxed">
-                {map.data.observed ? "Observed by " : ""}
-                <a
-                  href={map.data.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-ink-secondary underline underline-offset-2"
-                >
-                  {map.data.source}
-                </a>
-              </p>
-            </div>
+              </>
+            )}
           </div>
         </Panel>
       )}
