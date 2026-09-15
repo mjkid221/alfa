@@ -15,6 +15,7 @@
  */
 export const GLOBE_CHAINS = [
   "Bitcoin",
+  "Ethereum",
   "Solana",
   "Monad",
   "Tron",

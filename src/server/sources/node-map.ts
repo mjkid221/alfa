@@ -754,6 +754,78 @@ async function stellarNodes(): Promise<NodeMap | null> {
   );
 }
 
+/**
+ * Ethereum, from ChainSafe's discv5 crawler.
+ *
+ * This file twice recorded that Ethereum could not be placed — ethernodes,
+ * MigaLabs, monitoreth and ethseer are all behind Cloudflare, and ProbeLab
+ * wants a key. That was true of all of them and wrong about Ethereum: nodewatch
+ * still serves a **keyless GraphQL API** whose `getHeatmapData` returns a
+ * latitude, longitude, city and country per node. Its own front end is a dead
+ * shell, which is why it looked dead; the API is not. Measured 15 September
+ * 2026: 7,137 nodes, 1,663 distinct locations, 1,081 named cities, 72
+ * countries, and a daily series running to today.
+ *
+ * These are **consensus-layer** nodes, crawled over discv5 — a different
+ * population from the execution layer, where Etherscan's node tracker counts
+ * 11,848 across 63 countries but publishes no coordinates. If this ever goes
+ * dark, that tracker is the fallback, at the cost of country-level resolution.
+ *
+ * It publishes no ISP, so Ethereum has no hosting breakdown. It does classify
+ * each node as hosting, residential, business or education — 56% hosted — which
+ * is the better concentration signal and is not modelled here yet.
+ */
+async function ethereumNodes(): Promise<NodeMap | null> {
+  const raw = await fetchJson<{
+    data?: {
+      getHeatmapData?: {
+        latitude?: number | null;
+        longitude?: number | null;
+        city?: string | null;
+        country?: string | null;
+      }[];
+    };
+  }>("https://nodewatch.chainsafe.io/query", {
+    method: "POST",
+    body: {
+      query: "{ getHeatmapData { latitude longitude city country } }",
+    },
+    timeoutMs: 45_000,
+    retries: 1,
+    nullOn: [400, 403, 404, 429],
+  });
+
+  const rows = raw?.data?.getHeatmapData;
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const points: NodePoint[] = [];
+  for (const row of rows) {
+    if (typeof row.latitude !== "number" || typeof row.longitude !== "number") {
+      continue;
+    }
+    if (row.latitude === 0 && row.longitude === 0) continue;
+    points.push({
+      lat: row.latitude,
+      lon: row.longitude,
+      country: row.country === "" ? null : (row.country ?? null),
+      city: row.city === "" ? null : (row.city ?? null),
+      weight: 1,
+      host: null,
+    });
+  }
+
+  if (points.length === 0) return null;
+
+  return assemble(
+    "Ethereum",
+    collapse(points),
+    points.length,
+    "consensus nodes",
+    "ChainSafe nodewatch",
+    "https://nodewatch.chainsafe.io/",
+  );
+}
+
 /* ------------------------------------------------ sources that give addresses */
 
 /** Avalanche, from the official node's own view of its peers. */
@@ -995,6 +1067,8 @@ function load(source: NodeMapSource): Promise<NodeMap | null> {
       return hederaNodes();
     case "aptos":
       return aptosNodes();
+    case "nodewatch":
+      return ethereumNodes();
   }
 }
 

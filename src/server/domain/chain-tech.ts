@@ -351,18 +351,23 @@ export const VALIDATOR_SOURCE: Record<string, ValidatorSource> = {
 /**
  * Where each chain's node locations come from.
  *
- * Nine chains, swept live on 15 September 2026. The earlier finding — "only two
- * chains publish this" — was simply too weak a search: five of these nine hand
- * back coordinates directly and need no geolocation at all.
+ * Eleven chains, swept live on 15 September 2026. The original finding — "only
+ * two chains publish this" — was simply too weak a search, and the correction
+ * had to be made twice: Ethereum was written off here before anyone tried the
+ * API behind nodewatch's dead front end. Six of the eleven hand back
+ * coordinates directly and need no geolocation at all.
  *
  * Adding a tenth chain is one entry here. It used to be four edits in three
  * files, two of which had to agree and nothing checked that they did.
  *
  * ## What was looked at and rejected
  *
- *   • **Ethereum** — still nothing. ethernodes' API host does not resolve,
- *     nodewatch.io and monitoreth.io serve empty SPA shells with no JSON route,
- *     and MigaLabs sits behind Cloudflare (403).
+ *   • **Ethereum** — twice recorded here as impossible, and it was not. The
+ *     mistake was judging `nodewatch.io` by its front end, which is an empty
+ *     SPA shell: ChainSafe's crawler behind it still answers a keyless GraphQL
+ *     query at `nodewatch.chainsafe.io/query`, coordinates included. What is
+ *     genuinely shut is everything else — ethernodes, MigaLabs, monitoreth and
+ *     ethseer are all Cloudflare-gated, and ProbeLab wants a key.
  *   • **Cosmos `net_info`** — reachable after all, via publicnode and
  *     cosmos.directory, contrary to what this file used to claim. Rejected on
  *     better grounds: it returns *one node's peer list*, not a census — Osmosis
@@ -386,10 +391,12 @@ export type NodeMapSource =
   | { kind: "tron" }
   | { kind: "xrpl" }
   | { kind: "hedera" }
-  | { kind: "aptos" };
+  | { kind: "aptos" }
+  | { kind: "nodewatch" };
 
 export const NODE_MAP_SOURCE: Record<GlobeChain, NodeMapSource> = {
   Bitcoin: { kind: "bitnodes" },
+  Ethereum: { kind: "nodewatch" },
   Solana: { kind: "stakewiz" },
   Monad: { kind: "bitctrl-monad" },
   "Internet Computer": { kind: "icp" },

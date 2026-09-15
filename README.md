@@ -571,7 +571,7 @@ a filter by virtual machine. None of it feeds the score.
 | Monthly active developers | Electric Capital | 45 of 85 |
 | Nakamoto coefficient | Each chain's own validator set | 8 of 85 |
 | Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
-| Node locations | bitnodes, Stakewiz, gmonads and six chains' own endpoints | 10 of 85 |
+| Node locations | bitnodes, ChainSafe nodewatch, Stakewiz, gmonads and six chains' own endpoints | 11 of 85 |
 
 Coverage varies enormously, so every panel states its own rather than implying
 completeness.
@@ -610,13 +610,20 @@ frame, where the old version redrew the same image sixty times a second.
 
 The counts are not all in the same unit, so each globe names its own: 26,500
 Bitcoin **nodes**, 196 Monad **validators**, Hedera's 25 **council nodes** — which
-is its entire consensus layer, not a sample. Ten chains can be placed and one of
-them is a favour: Monad publishes nothing, so its validators come from two
+is its entire consensus layer, not a sample. Eleven chains can be placed and one
+of them is a favour: Monad publishes nothing, so its validators come from two
 independent observers that happen to agree, and are labelled as a third party's
 measurement rather than the chain's own data. Aptos is the awkward one — it
 publishes hostnames rather than addresses, so they are resolved before they can
 be placed, and the 20 of 84 that cannot be read are reported rather than
-dropped. Ethereum still cannot be placed at all.
+dropped.
+
+**Ethereum is here after being written off twice.** `nodewatch.io` is an empty
+shell, so it read as another dead crawler — but ChainSafe's crawler behind it
+still answers a keyless GraphQL query, coordinates and all: 7,137 nodes across
+1,663 locations and 1,081 named cities, updated daily. They are consensus-layer
+nodes; the execution layer is a different population, and Etherscan counts
+11,848 of those but publishes only which country each is in.
 
 Beside the globe is the breakdown that actually answers a deployment question:
 **who hosts it**. Geography across thirty countries means less than it looks if
@@ -624,6 +631,13 @@ one company owns the hardware — Hedera's 25 council nodes sit in seven countri
 and 52% of them are at Amazon. That figure needed the provider names folding
 first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
 Inc." and "Amazon.com", which had been quietly reporting 32%.
+
+Click a provider and the globe draws it: great-circle arcs sweep out joining
+every location it runs, with a pulse travelling them while it stays selected.
+That is the only relationship the globe draws, and it is drawn because it is the
+only one in the data — 402 of Tron's 1,183 nodes are Amazon's, and the arcs are
+where. Other globes animate arcs to show block propagation, which is live data
+this app has no equivalent of, so it does not borrow the look for nothing.
 
 **One rule changed.** Gas needs a node, and public endpoints answer for 39 of the
 41 EVM chains but not reliably for the rest, so `ALCHEMY_API_KEY` is an optional

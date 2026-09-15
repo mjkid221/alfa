@@ -225,3 +225,78 @@ export function centroidOf(
 export function flightDuration(degrees: number): number {
   return clamp(300 + Math.abs(degrees) * 2.4, 300, 900);
 }
+
+/** Samples along one great-circle arc. 40 is smooth at any zoom we allow. */
+export const ARC_SAMPLES = 40;
+/** Floats per arc sample: three Earth-fixed direction components, plus lift. */
+export const ARC_STRIDE = 4;
+/** How far an arc rises off the surface at its midpoint, as a fraction of R. */
+const ARC_LIFT = 0.18;
+
+/**
+ * Great-circle arcs between a set of locations, in Earth-fixed coordinates.
+ *
+ * Built once per selection and rotated with the camera each frame, the same way
+ * the points are. Each sample is the unit direction `(cosφ·cosλ, cosφ·sinλ,
+ * sinφ)` plus the radius multiplier at that point along the arc — so the frame
+ * loop needs four multiplies and no trigonometry, and an arc can be drawn
+ * rising above the sphere rather than painted flat onto it.
+ *
+ * Interpolation is spherical (slerp), not linear: linear interpolation between
+ * two points on a sphere cuts *through* it, which at these distances is visibly
+ * the wrong path — the arc would leave the surface at both ends and sag in the
+ * middle instead of following the route between them.
+ */
+export function buildArcs(
+  places: readonly { lat: number; lon: number }[],
+): Float32Array {
+  const pairs: [number, number][] = [];
+  for (let i = 0; i < places.length; i++) {
+    for (let j = i + 1; j < places.length; j++) pairs.push([i, j]);
+  }
+
+  const out = new Float32Array(pairs.length * ARC_SAMPLES * ARC_STRIDE);
+  const unit = places.map((place) => {
+    const phi = place.lat * RADIANS;
+    const lambda = place.lon * RADIANS;
+    const cosPhi = Math.cos(phi);
+    return [
+      cosPhi * Math.cos(lambda),
+      cosPhi * Math.sin(lambda),
+      Math.sin(phi),
+    ];
+  });
+
+  let o = 0;
+  for (const [i, j] of pairs) {
+    const a = unit[i]!;
+    const b = unit[j]!;
+    const dot = clamp(a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!, -1, 1);
+    const omega = Math.acos(dot);
+    const sinOmega = Math.sin(omega);
+
+    for (let k = 0; k < ARC_SAMPLES; k++) {
+      const t = k / (ARC_SAMPLES - 1);
+      let x: number, y: number, z: number;
+      if (sinOmega < 1e-6) {
+        // Coincident or antipodal: slerp is undefined, so hold the first end.
+        [x, y, z] = [a[0]!, a[1]!, a[2]!];
+      } else {
+        const wa = Math.sin((1 - t) * omega) / sinOmega;
+        const wb = Math.sin(t * omega) / sinOmega;
+        x = a[0]! * wa + b[0]! * wb;
+        y = a[1]! * wa + b[1]! * wb;
+        z = a[2]! * wa + b[2]! * wb;
+      }
+      out[o] = x;
+      out[o + 1] = y;
+      out[o + 2] = z;
+      // Longer arcs rise higher, so a hop across a continent and one across the
+      // planet do not look like the same distance.
+      out[o + 3] = 1 + ARC_LIFT * (omega / Math.PI) * Math.sin(Math.PI * t);
+      o += ARC_STRIDE;
+    }
+  }
+
+  return out;
+}

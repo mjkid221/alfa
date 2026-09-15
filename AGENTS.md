@@ -184,15 +184,26 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
   Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
   and never read a README. Verify any new entry live before adding it.
-- Node locations exist for **ten** chains, not the two first found — the
-  registry and the rejections are in `domain/chain-tech.ts`. Five need no
+- Node locations exist for **eleven** chains, not the two first found — the
+  registry and the rejections are in `domain/chain-tech.ts`. Six need no
   geolocation: bitnodes (`?field=coordinates`, 3,325 **distinct** coordinates in
   62 KB, with no duplicates, so no per-location counts exist; its full snapshot
   is 2.8 MB and its rows carry five fields and **no geography at all**),
-  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, and gmonads
-  for Monad. Four are geolocated from addresses: Avalanche `info.peers`,
-  TronGrid `listnodes` (hosts are **hex-encoded ASCII**), XRPScan, and Hedera's
-  mirror node.
+  Stakewiz, the Internet Computer's own dashboard, Stellar's radar, gmonads for
+  Monad, and ChainSafe nodewatch for Ethereum. Four are geolocated from
+  addresses: Avalanche `info.peers`, TronGrid `listnodes` (hosts are
+  **hex-encoded ASCII**), XRPScan, and Hedera's mirror node.
+- **Ethereum was written off twice and should not have been.** `nodewatch.io`
+  is an empty SPA shell, but ChainSafe's crawler behind it still serves keyless
+  GraphQL at `nodewatch.chainsafe.io/query`: `getHeatmapData` returns latitude,
+  longitude, city and country per node — 7,137 nodes, 1,663 locations, 1,081
+  cities, and a daily series running to today. They are **consensus-layer**
+  nodes over discv5; the execution layer is a different population, counted by
+  Etherscan's node tracker at 11,848 across 63 countries but with no
+  coordinates, which is the fallback if nodewatch ever goes dark. The lesson is
+  to probe the API rather than judge the dashboard. nodewatch also classifies
+  each node hosting/residential/business/education (56% hosted), which is a
+  better concentration signal than ISP and is not modelled yet.
 - **Aptos publishes hostnames, not addresses.** `0x1::stake::ValidatorSet`'s
   `network_addresses` is BCS-encoded and its bytes contain a readable name
   (`val1.mainnet.aptos.p2p.org`); 70 of 84 validators yield one, and
@@ -222,6 +233,11 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   the current one, and omitting it is a 400), falling back to scraping
   BitCtrl's 2.6 MB `/geo` page. Both are flagged `observed`. Validate
   structurally and return null; they will break.
+- The globe draws exactly one **relationship**: arcs joining the locations of a
+  selected hosting provider (`buildArcs`, slerp not lerp — linear interpolation
+  between two points on a sphere cuts through it). It exists because that
+  relationship is in the data. gmonads' arcs carry block propagation, which is
+  live data with no equivalent here, so do not add arcs for anything else.
 - The globe's land is a **2 KB bitmask**, not a coastline — `chart/land-mask.ts`
   rasterises Natural Earth onto a 2° grid, 5,402 of 16,200 cells. It replaced
   the claim that "the nodes draw the continents themselves", which held only for

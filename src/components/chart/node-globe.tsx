@@ -9,8 +9,12 @@ import type { NodeMap, NodePoint } from "~/server/sources/node-map";
 
 import { landPoints } from "./land-mask";
 import {
+  ARC_SAMPLES,
+  ARC_STRIDE,
   CACHE_STRIDE,
+  RADIANS,
   PROJECTED_STRIDE,
+  buildArcs,
   buildGraticule,
   buildPointCache,
   centroidOf,
@@ -134,6 +138,19 @@ const BADGE_MIN_Z = 0.3;
 /** Two badges closer than this, in px, would collide. */
 const BADGE_SPACING = 38;
 
+/**
+ * How many of a provider's locations get joined up.
+ *
+ * All pairs, so ten places means forty-five arcs — which is the dense look the
+ * encoding wants. Past ten it stops reading as a network and starts reading as
+ * a ball of wool.
+ */
+const ARC_PLACES = 10;
+/** Milliseconds for the arcs to sweep out once a provider is selected. */
+const ARC_SWEEP_MS = 850;
+/** Seconds for one pulse to travel the length of an arc. */
+const ARC_PULSE_S = 2.4;
+
 interface Drag {
   pointerId: number;
   x: number;
@@ -166,6 +183,11 @@ export interface NodeGlobeProps {
    */
   highlightCountry?: string | null;
   /**
+   * Lights this hosting provider's locations and joins them with great-circle
+   * arcs. The one relationship the globe draws, and the only one it has.
+   */
+  highlightHost?: string | null;
+  /**
    * Turns the globe until this country is centred, and highlights it. Bump
    * `nonce` to re-centre on a repeat click of the row already focused.
    */
@@ -194,6 +216,7 @@ export function NodeGlobe({
   height = 340,
   className,
   highlightCountry = null,
+  highlightHost = null,
   focus = null,
   onHoverPoint,
   onFocusRelease,
@@ -226,6 +249,12 @@ export function NodeGlobe({
   const countRef = useRef(0);
   /** Indices of the heaviest locations, largest first. Empty when unweighted. */
   const badgeOrderRef = useRef<number[]>([]);
+  /** Great-circle arcs for the selected hosting provider, Earth-fixed. */
+  const arcRef = useRef<Float32Array>(new Float32Array(0));
+  const arcCountRef = useRef(0);
+  /** 0 while the arcs are sweeping out, 1 once they are all drawn. */
+  const arcPhaseRef = useRef(0);
+  const arcStartRef = useRef(0);
   const dragRef = useRef<Drag | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -302,7 +331,10 @@ export function NodeGlobe({
         flightRef.current !== null ||
         camera.vLambda !== 0 ||
         camera.vPhi !== 0 ||
-        spinRef.current
+        spinRef.current ||
+        // The pulse is continuous, but only while a provider is selected — it
+        // is the readout of a choice the reader made, not an idle animation.
+        (arcCountRef.current > 0 && !reducedRef.current)
       );
     };
 
@@ -393,6 +425,11 @@ export function NodeGlobe({
     };
 
     const advance = (dt: number, now: number) => {
+      if (arcCountRef.current > 0 && arcPhaseRef.current < 1) {
+        arcPhaseRef.current = reducedRef.current
+          ? 1
+          : Math.min(1, (now - arcStartRef.current) / ARC_SWEEP_MS);
+      }
       const camera = cameraRef.current;
       const flight = flightRef.current;
 
@@ -474,7 +511,7 @@ export function NodeGlobe({
       context.globalAlpha = 1;
     };
 
-    const render = () => {
+    const render = (now: number) => {
       const view = viewRef.current;
       if (view.width <= 0) return;
 
@@ -603,6 +640,97 @@ export function NodeGlobe({
         paintPoints(-1, mark, 1, radius);
       }
 
+      // Arcs joining one hosting provider's locations.
+      //
+      // This is the one place the globe draws a *relationship*, and it is drawn
+      // only because there is one to draw: these places run the same company's
+      // hardware. gmonads' globe has arcs like these carrying block
+      // propagation, which is live data we have no equivalent of — so rather
+      // than borrow the look and mean nothing by it, the arcs here answer the
+      // question the panel beside them is already asking.
+      const arcCount = arcCountRef.current;
+      if (arcCount > 0) {
+        const arcs = arcRef.current;
+        const sinL0 = Math.sin(camera.lambda * RADIANS);
+        const cosL0 = Math.cos(camera.lambda * RADIANS);
+        const sinP0 = Math.sin(camera.phi * RADIANS);
+        const cosP0 = Math.cos(camera.phi * RADIANS);
+        const phase = arcPhaseRef.current;
+        // A pulse runs the length of each arc, offset per arc so they read as
+        // traffic rather than as one bar sliding across the planet.
+        const pulse = reducedRef.current ? -1 : (now / 1000 / ARC_PULSE_S) % 1;
+
+        context.lineCap = "round";
+        for (let a = 0; a < arcCount; a++) {
+          // Staggered departure, so the set sweeps out instead of appearing.
+          const begin = (a / arcCount) * 0.45;
+          const drawn = clamp((phase - begin) / (1 - 0.45), 0, 1);
+          if (drawn <= 0) continue;
+          const last = Math.max(1, Math.floor(drawn * (ARC_SAMPLES - 1)));
+          const offset = (a * 0.13) % 1;
+          const head = pulse < 0 ? -1 : (pulse + offset) % 1;
+
+          context.beginPath();
+          let started = false;
+          for (let k = 0; k <= last; k++) {
+            const o = (a * ARC_SAMPLES + k) * ARC_STRIDE;
+            const ex = arcs[o]!;
+            const ey = arcs[o + 1]!;
+            const ez = arcs[o + 2]!;
+            const lift = arcs[o + 3]!;
+
+            const u = ex * cosL0 + ey * sinL0;
+            const v = ey * cosL0 - ex * sinL0;
+            const depth = sinP0 * ez + cosP0 * u;
+            // Lifted arcs clear the horizon before their endpoints do, so the
+            // cull is slightly past it rather than at zero — otherwise an arc
+            // ends in mid-air short of the limb.
+            if (depth <= -0.12) {
+              started = false;
+              continue;
+            }
+            const sx = cx + radius * lift * v;
+            const sy = cy - radius * lift * (cosP0 * ez - sinP0 * u);
+            if (started) context.lineTo(sx, sy);
+            else {
+              context.moveTo(sx, sy);
+              started = true;
+            }
+          }
+          context.strokeStyle = lit;
+          context.globalAlpha = 0.42;
+          context.lineWidth = 1.1;
+          context.stroke();
+
+          // The travelling head, bright and short.
+          if (head >= 0 && drawn >= 1) {
+            const k = Math.floor(head * (ARC_SAMPLES - 1));
+            const o = (a * ARC_SAMPLES + k) * ARC_STRIDE;
+            const ex = arcs[o]!;
+            const ey = arcs[o + 1]!;
+            const ez = arcs[o + 2]!;
+            const lift = arcs[o + 3]!;
+            const u = ex * cosL0 + ey * sinL0;
+            const v = ey * cosL0 - ex * sinL0;
+            const depth = sinP0 * ez + cosP0 * u;
+            if (depth > -0.12) {
+              context.beginPath();
+              context.arc(
+                cx + radius * lift * v,
+                cy - radius * lift * (cosP0 * ez - sinP0 * u),
+                2,
+                0,
+                Math.PI * 2,
+              );
+              context.fillStyle = lit;
+              context.globalAlpha = 0.95;
+              context.fill();
+            }
+          }
+        }
+        context.globalAlpha = 1;
+      }
+
       // Counts on the biggest clusters. gmonads' globe does this and it is the
       // single thing that makes a weighted point cloud legible: dot area says
       // "bigger", a number says forty-eight. Only the largest few, only on the
@@ -686,12 +814,12 @@ export function NodeGlobe({
 
       const wasMoving = moving();
       advance(dt, now);
-      render();
+      render(now);
 
       if (moving()) schedule();
       else if (wasMoving) {
         settle();
-        render();
+        render(now);
       }
     };
 
@@ -815,17 +943,60 @@ export function NodeGlobe({
   }, [points]);
 
   // Highlight. A null mask means "no selection", which paints everything lit.
+  // A host wins over a country: selecting a provider is the more specific act,
+  // and hovering a country row while one is selected should not silently
+  // repaint the globe around the country instead.
   useEffect(() => {
     const country = focus?.country ?? highlightCountry;
-    if (!country) {
-      maskRef.current = null;
-    } else {
+    if (highlightHost) {
+      const mask = new Uint8Array(points.length);
+      points.forEach((point, index) => {
+        if (point.host === highlightHost) mask[index] = 1;
+      });
+      maskRef.current = mask;
+    } else if (country) {
       const mask = new Uint8Array(points.length);
       for (const index of countryOf.get(country) ?? []) mask[index] = 1;
       maskRef.current = mask;
+    } else {
+      maskRef.current = null;
     }
     engineRef.current?.schedule();
-  }, [points, countryOf, highlightCountry, focus?.country]);
+  }, [points, countryOf, highlightCountry, highlightHost, focus?.country]);
+
+  // Arcs. Rebuilt only when the provider changes, then rotated with the camera.
+  useEffect(() => {
+    if (!highlightHost) {
+      arcRef.current = new Float32Array(0);
+      arcCountRef.current = 0;
+      arcPhaseRef.current = 0;
+      engineRef.current?.schedule();
+      return;
+    }
+
+    const places = points
+      .map((point, index) => ({ point, index }))
+      .filter((row) => row.point.host === highlightHost)
+      .sort((a, b) => (b.point.weight ?? 0) - (a.point.weight ?? 0))
+      .slice(0, ARC_PLACES)
+      .map((row) => ({ lat: row.point.lat, lon: row.point.lon }));
+
+    // One place is not a relationship, so it gets no arc — the highlight alone
+    // already says where it is.
+    if (places.length < 2) {
+      arcRef.current = new Float32Array(0);
+      arcCountRef.current = 0;
+      arcPhaseRef.current = 0;
+      engineRef.current?.schedule();
+      return;
+    }
+
+    arcRef.current = buildArcs(places);
+    arcCountRef.current = arcRef.current.length / (ARC_SAMPLES * ARC_STRIDE);
+    arcPhaseRef.current = 0;
+    arcStartRef.current = performance.now();
+    engineRef.current?.schedule();
+  }, [points, highlightHost]);
 
   // Focus. Turns the globe to the country's centre of mass.
   useEffect(() => {

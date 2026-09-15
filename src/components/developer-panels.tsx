@@ -46,6 +46,7 @@ export function NodeGlobePanel({ className }: { className?: string }) {
   const [focus, setFocus] = useState<{ country: string; nonce: number } | null>(
     null,
   );
+  const [host, setHost] = useState<string | null>(null);
 
   const map = api.developer.nodeMap.useQuery(
     { chain },
@@ -61,6 +62,7 @@ export function NodeGlobePanel({ className }: { className?: string }) {
     setChain(next);
     setHighlight(null);
     setFocus(null);
+    setHost(null);
   };
 
   return (
@@ -97,8 +99,11 @@ export function NodeGlobePanel({ className }: { className?: string }) {
             map={data}
             height={400}
             highlightCountry={highlight}
+            highlightHost={host}
             focus={focus}
-            onHoverPoint={(point) => setHighlight(point?.country ?? null)}
+            onHoverPoint={(point) =>
+              setHighlight(host ? null : (point?.country ?? null))
+            }
             onFocusRelease={() => setFocus(null)}
           />
 
@@ -126,7 +131,8 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                         onMouseLeave={() => setHighlight(null)}
                         onFocus={() => setHighlight(row.country)}
                         onBlur={() => setHighlight(null)}
-                        onClick={() =>
+                        onClick={() => {
+                          setHost(null);
                           setFocus((current) =>
                             current?.country === row.country
                               ? null
@@ -134,8 +140,8 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                                   country: row.country,
                                   nonce: (current?.nonce ?? 0) + 1,
                                 },
-                          )
-                        }
+                          );
+                        }}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
                           focus?.country === row.country
@@ -169,18 +175,35 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                 <p className="text-ink-muted mb-1.5 text-[10.5px] tracking-wide uppercase">
                   Largest hosts
                 </p>
-                <ul className="space-y-1">
+                {/* Selecting a provider joins its locations on the globe.
+                    That is the one relationship in the data worth drawing, and
+                    it is the answer to the question the concentration line
+                    below raises: where, exactly, is all of it? */}
+                <ul className="space-y-0.5">
                   {hosts.slice(0, 4).map((row) => (
-                    <li
-                      key={row.host}
-                      className="flex items-baseline gap-2 px-1.5 text-[11.5px]"
-                    >
-                      <span className="text-ink-secondary truncate">
-                        {row.host}
-                      </span>
-                      <span className="tnum text-ink-faint ml-auto">
-                        {formatCount(row.count)}
-                      </span>
+                    <li key={row.host}>
+                      <button
+                        type="button"
+                        aria-pressed={host === row.host}
+                        onClick={() => {
+                          setFocus(null);
+                          setHighlight(null);
+                          setHost((current) =>
+                            current === row.host ? null : row.host,
+                          );
+                        }}
+                        className={cn(
+                          "flex w-full items-baseline gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
+                          host === row.host
+                            ? "bg-raised text-ink"
+                            : "hover:bg-raised text-ink-secondary",
+                        )}
+                      >
+                        <span className="truncate">{row.host}</span>
+                        <span className="tnum text-ink-faint ml-auto">
+                          {formatCount(row.count)}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
