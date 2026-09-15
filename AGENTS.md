@@ -184,6 +184,20 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   keyless. The repo **index filename varies** — `README.md`, `.mediawiki` for
   Bitcoin, `.adoc` for the Internet Computer — so store the proposal directory
   and never read a README. Verify any new entry live before adding it.
+- **Monad's globe pulses live, and the join took three endpoints to find.** A
+  block's `miner` is an address, and **neither validator key derives to it** —
+  `node_id` and `secp` are both valid secp256k1 points but they are network and
+  consensus keys, and the addresses they produce match no proposer. The link is
+  `auth_address` on gmonads' `epoch_validators`, joined to `geolocations` on
+  `node_id`. The epoch is circular: `epoch_validators` rejects an epoch that is
+  not near-current while `geolocations` ignores the argument and stamps the real
+  one on every row, so read it from there first.
+- **Only about a quarter of Monad's blocks can be placed.** Measured over 60
+  consecutive blocks: 45 distinct proposers, of which 11 were registered under
+  an `auth_address` — and all 11 had a location. So the gap is not geolocation,
+  it is that most proposers sign with an address they have not registered.
+  gmonads shows every proposer because they read it from their own node's
+  stream. Do not "improve" the rate by guessing; the readout states the limit.
 - **Most chains cannot be mapped, and it is not a coverage failure.** Counted
   against the 85: **24 are L2s with a single sequencer**, so no validator set
   exists to map; **Cosmos-SDK chains hide validators behind sentry nodes** by

@@ -670,6 +670,15 @@ five years of monthly developer counts behind each sparkline, and two thirds of
 the decentralisation reading: the Nakamoto column shows the coefficient, but not
 that Solana has 676 validators and its largest holds 4.1% of stake.
 
+**Monad's globe is live.** Every Monad block names the validator that proposed
+it, so the globe rings the place it came from as it happens, at a two-second
+poll that the server shares between every reader. Roughly a quarter of blocks
+can be placed — a block's author address is only joinable to a location when the
+validator registered that address, and most have not — so the readout beside it
+says which blocks it could place rather than letting the quiet ones imply a
+quiet network. It is the only chain where this is possible: Ethereum's `miner`
+is a fee recipient, not a located node.
+
 Click a provider and the globe draws it: great-circle arcs sweep out joining
 every location it runs, with a pulse travelling them while it stays selected.
 That is the only relationship the globe draws, and it is drawn because it is the

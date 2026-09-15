@@ -14,6 +14,7 @@ import {
   formatPercent,
 } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
+import { useLiveProposer } from "~/components/developer-panels";
 import { api } from "~/trpc/react";
 
 /**
@@ -392,6 +393,7 @@ export function ChainDeveloperView({
   brandColor: string | null;
 }) {
   const hasGlobe = (GLOBE_CHAINS as readonly string[]).includes(name);
+  const live = useLiveProposer(name);
   const map = api.developer.nodeMap.useQuery(
     { chain: name },
     { staleTime: 600_000, enabled: hasGlobe },
@@ -436,7 +438,7 @@ export function ChainDeveloperView({
           bodyClassName="px-4 pt-2 pb-4"
         >
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
-            <NodeGlobe map={map.data} height={380} />
+            <NodeGlobe map={map.data} height={380} pulse={live.pulse} />
             <div className="space-y-3">
               <div>
                 <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
@@ -466,6 +468,22 @@ export function ChainDeveloperView({
                   ))}
                 </ul>
               )}
+              {live.block !== null && (
+                <div className="border-hairline border-t pt-2.5">
+                  <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
+                    Live
+                  </p>
+                  <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
+                    Block {formatInteger(live.block)}
+                  </p>
+                  <p className="text-ink-faint text-[11px] leading-snug">
+                    {live.place
+                      ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
+                      : "proposer not registered under a published address"}
+                  </p>
+                </div>
+              )}
+
               <p className="text-ink-faint text-[11px] leading-relaxed">
                 {map.data.observed ? "Observed by " : ""}
                 <a

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { NodeGlobe } from "~/components/chart/node-globe";
 import { Explain } from "~/components/ui/explain";
 import { Panel } from "~/components/ui/primitives";
 import { Segmented } from "~/components/ui/segmented";
 import { cn } from "~/lib/cn";
-import { formatCount } from "~/lib/format";
+import { formatCount, formatInteger } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { sequentialStep } from "~/lib/palette";
 import { api } from "~/trpc/react";
@@ -31,6 +31,41 @@ import type { NodeMap } from "~/server/sources/node-map";
 /* ------------------------------------------------------------------ globe --- */
 
 /**
+ * The proposer of Monad's latest block, polled while the globe is on screen.
+ *
+ * Two seconds is slower than Monad produces blocks, deliberately — this is a
+ * live pulse, not a ledger. The server caches for the same two seconds, so a
+ * room full of readers costs one request between them.
+ *
+ * Only about a quarter of blocks can be placed: most proposers sign with an
+ * address that is not the one they registered, so there is nothing to join on.
+ * The readout says which, rather than letting the quiet blocks imply a quiet
+ * network.
+ */
+export function useLiveProposer(chain: string) {
+  const live = api.developer.liveProposer.useQuery(
+    { chain },
+    {
+      enabled: chain === "Monad",
+      refetchInterval: 2_000,
+      refetchIntervalInBackground: false,
+      staleTime: 0,
+    },
+  );
+
+  const place = live.data?.place ?? null;
+  const block = live.data?.block ?? null;
+  // Keyed on the block, so an unchanged poll does not re-pulse.
+  const pulse = useMemo(
+    () =>
+      place && block ? { lat: place.lat, lon: place.lon, key: block } : null,
+    [place, block],
+  );
+
+  return { pulse, block, place, identified: live.data?.identified ?? null };
+}
+
+/**
  * The globe, and the two breakdowns that make it readable.
  *
  * The country list is not a caption: hovering a row lights those points and
@@ -50,6 +85,7 @@ export function NodeGlobePanel({ className }: { className?: string }) {
     null,
   );
   const [host, setHost] = useState<string | null>(null);
+  const live = useLiveProposer(chain);
 
   const map = api.developer.nodeMap.useQuery(
     { chain },
@@ -104,6 +140,7 @@ export function NodeGlobePanel({ className }: { className?: string }) {
             highlightCountry={highlight}
             highlightHost={host}
             focus={focus}
+            pulse={live.pulse}
             onHoverPoint={(point) =>
               setHighlight(host ? null : (point?.country ?? null))
             }
@@ -216,6 +253,26 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                     {data.unit} sit with one provider.
                   </p>
                 )}
+              </div>
+            )}
+
+            {live.block !== null && (
+              <div className="border-hairline border-t pt-2.5">
+                <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
+                  Live
+                </p>
+                <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
+                  Block {formatInteger(live.block)}
+                </p>
+                <p className="text-ink-faint text-[11px] leading-snug">
+                  {live.place
+                    ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
+                    : "proposer not registered under a published address"}
+                </p>
+                <p className="text-ink-faint mt-1 text-[11px] leading-snug">
+                  About a quarter of proposers can be placed this way; the rest
+                  sign with an address they have not registered.
+                </p>
               </div>
             )}
 

@@ -151,6 +151,11 @@ const ARC_SWEEP_MS = 850;
 /** Seconds for one pulse to travel the length of an arc. */
 const ARC_PULSE_S = 2.4;
 
+/** How long a block pulse takes to expand and fade, in milliseconds. */
+const BLOCK_PULSE_MS = 1600;
+/** How many are kept on screen at once. */
+const BLOCK_PULSE_MAX = 5;
+
 interface Drag {
   pointerId: number;
   x: number;
@@ -196,6 +201,12 @@ export interface NodeGlobeProps {
   onHoverPoint?: (point: NodePoint | null) => void;
   /** Fired when a drag, wheel or key takes the reader off the focused country. */
   onFocusRelease?: () => void;
+  /**
+   * A block was just proposed here. Changing `key` starts a new ring; the same
+   * key redelivered does nothing, so a poll that returns an unchanged block
+   * does not re-pulse.
+   */
+  pulse?: { lat: number; lon: number; key: number } | null;
 }
 
 /**
@@ -220,6 +231,7 @@ export function NodeGlobe({
   focus = null,
   onHoverPoint,
   onFocusRelease,
+  pulse = null,
 }: NodeGlobeProps) {
   const { ref: wrapRef, width } = useMeasure<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -255,6 +267,8 @@ export function NodeGlobe({
   /** 0 while the arcs are sweeping out, 1 once they are all drawn. */
   const arcPhaseRef = useRef(0);
   const arcStartRef = useRef(0);
+  /** Recent block proposals, as expanding rings. Newest last. */
+  const pulseRef = useRef<{ lat: number; lon: number; start: number }[]>([]);
   const dragRef = useRef<Drag | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -334,7 +348,8 @@ export function NodeGlobe({
         spinRef.current ||
         // The pulse is continuous, but only while a provider is selected — it
         // is the readout of a choice the reader made, not an idle animation.
-        (arcCountRef.current > 0 && !reducedRef.current)
+        (arcCountRef.current > 0 && !reducedRef.current) ||
+        pulseRef.current.length > 0
       );
     };
 
@@ -425,6 +440,11 @@ export function NodeGlobe({
     };
 
     const advance = (dt: number, now: number) => {
+      if (pulseRef.current.length > 0) {
+        pulseRef.current = pulseRef.current.filter(
+          (ring) => now - ring.start < BLOCK_PULSE_MS,
+        );
+      }
       if (arcCountRef.current > 0 && arcPhaseRef.current < 1) {
         arcPhaseRef.current = reducedRef.current
           ? 1
@@ -777,6 +797,50 @@ export function NodeGlobe({
         }
       }
 
+      // Blocks, as they are proposed. Drawn over everything because it is the
+      // only thing here that is happening rather than being reported.
+      if (pulseRef.current.length > 0) {
+        const sinL0 = Math.sin(camera.lambda * RADIANS);
+        const cosL0 = Math.cos(camera.lambda * RADIANS);
+        const sinP0 = Math.sin(camera.phi * RADIANS);
+        const cosP0 = Math.cos(camera.phi * RADIANS);
+
+        for (const ring of pulseRef.current) {
+          const t = (now - ring.start) / BLOCK_PULSE_MS;
+          if (t < 0 || t > 1) continue;
+
+          const phi = ring.lat * RADIANS;
+          const lambda = ring.lon * RADIANS;
+          const cosPhi = Math.cos(phi);
+          const sinPhi = Math.sin(phi);
+          const ex = cosPhi * Math.cos(lambda);
+          const ey = cosPhi * Math.sin(lambda);
+          const u = ex * cosL0 + ey * sinL0;
+          const v = ey * cosL0 - ex * sinL0;
+          const depth = sinP0 * sinPhi + cosP0 * u;
+          if (depth <= 0) continue;
+
+          const x = cx + radius * v;
+          const y = cy - radius * (cosP0 * sinPhi - sinP0 * cosPhi * u);
+          // Eased outward so the ring leaves quickly and settles, which reads
+          // as an event rather than a throb.
+          const eased = 1 - Math.pow(1 - t, 3);
+          context.globalAlpha = (1 - t) * 0.85 * depth;
+          context.beginPath();
+          context.arc(x, y, 3 + eased * 22, 0, Math.PI * 2);
+          context.strokeStyle = lit;
+          context.lineWidth = 1.5;
+          context.stroke();
+
+          context.globalAlpha = (1 - t) * depth;
+          context.beginPath();
+          context.arc(x, y, 2.4, 0, Math.PI * 2);
+          context.fillStyle = lit;
+          context.fill();
+        }
+        context.globalAlpha = 1;
+      }
+
       // The hovered mark, ringed so the tooltip has something to point at.
       const held = hoverRef.current;
       if (held >= 0 && held < countRef.current) {
@@ -1043,6 +1107,21 @@ export function NodeGlobe({
     engineRef.current?.schedule();
     setLive(`Centred on ${country}, ${indices.length} locations.`);
   }, [points, countryOf, focus?.country, focus?.nonce]);
+
+  // A proposal arrives. Suppressed under reduced motion, where the readout
+  // beside the globe carries the same information without anything moving.
+  const pulseKey = pulse?.key ?? null;
+  const pulseLat = pulse?.lat ?? null;
+  const pulseLon = pulse?.lon ?? null;
+  useEffect(() => {
+    if (pulseKey === null || pulseLat === null || pulseLon === null) return;
+    if (reducedRef.current) return;
+    pulseRef.current = [
+      ...pulseRef.current.slice(-(BLOCK_PULSE_MAX - 1)),
+      { lat: pulseLat, lon: pulseLon, start: performance.now() },
+    ];
+    engineRef.current?.schedule();
+  }, [pulseKey, pulseLat, pulseLon]);
 
   // Motion. `useReducedMotion` is optimistically true until the query answers,
   // so the first paint is a single still frame and the spin starts only once.
