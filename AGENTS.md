@@ -245,6 +245,21 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   whole life of developer mode — fetched, typed, shipped to the browser, and
   rendered by nothing. When adding a field to `DeveloperMetrics`, add the render
   path in the same change or it will sit there.
+- **Contract size limits are measured, not assumed**, and the old table was
+  wrong in both directions: its only entry (Arbitrum at 49,152) is actually
+  24,576, and four chains do deviate — **Monad 131,072**, Celo 65,536, Polygon
+  PoS 32,768, Berachain 32,768. Measure with six bytes of initcode,
+  `PUSH3 <N> PUSH1 0 RETURN`, binary-searched through `eth_estimateGas` until
+  the chain answers "max code size exceeded". Two confounds: code deposit costs
+  200 gas a byte, so a node says "out of gas" long before "too big"; and some
+  nodes refuse a sender that is not a funded account. **A rejection is strong
+  evidence, an acceptance is weak** — a node may not enforce the rule in
+  estimation — so record a deviation only when a second endpoint agrees.
+  `contractSizeSource` marks the nine chains that refused the probe as assumed.
+- **Every page that reads the filters store must call `useRehydrateFilters()`.**
+  `skipHydration` is on so SSR and the first client render agree, and only
+  `Screen` was rehydrating — so a chain page opened directly read the defaults
+  forever, showing research mode while localStorage said developer.
 - **ip-api allows 15 batch requests a minute, not 45.** 45 is its single-address
   limit; the batch endpoint counts down in `X-Rl` and resets after `X-Ttl`. Tron
   alone needs twelve batches, so `node-map.ts` waits on those headers — a

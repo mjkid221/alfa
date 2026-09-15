@@ -2,9 +2,10 @@
 
 import { ArrowUpRight } from "lucide-react";
 
+import { NodeGlobe } from "~/components/chart/node-globe";
 import { Sparkline } from "~/components/chart/sparkline";
 import { Explain } from "~/components/ui/explain";
-import { Panel } from "~/components/ui/primitives";
+import { ChainAvatar, Panel } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
@@ -12,6 +13,7 @@ import {
   formatInteger,
   formatPercent,
 } from "~/lib/format";
+import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { api } from "~/trpc/react";
 
 /**
@@ -127,9 +129,11 @@ export function ChainDeveloper({
                 term="contractSize"
                 value={`${formatInteger(dev.contractSizeLimit)} bytes`}
                 note={
-                  dev.contractSizeLimit === 24_576
-                    ? "EIP-170, inherited unchanged"
-                    : "raised above EIP-170"
+                  dev.contractSizeSource === "assumed"
+                    ? "EIP-170 assumed; this chain refused the probe"
+                    : dev.contractSizeLimit === 24_576
+                      ? "EIP-170, measured"
+                      : `${(dev.contractSizeLimit / 24_576).toFixed(1)}× EIP-170, measured`
                 }
               />
             )}
@@ -356,5 +360,127 @@ function Figure({
         <p className="text-ink-faint text-[11px] leading-snug">{note}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * The whole chain page, in developer mode.
+ *
+ * Not the valuation page with a panel bolted on: developer mode asks a
+ * different question and shares almost none of its answer, so it replaces the
+ * body. The identity strip keeps the chain's name and what it runs — which is
+ * the developer's version of a verdict — and drops the tier, the value gap and
+ * the peer scale, none of which mean anything to someone choosing where to
+ * deploy.
+ *
+ * Where the chain is one of the twelve whose node locations can be established,
+ * its own globe comes with it. That is the one piece of developer data that is
+ * inherently per-chain and was previously only reachable through a switcher on
+ * the home screen.
+ */
+export function ChainDeveloperView({
+  slug,
+  name,
+  symbol,
+  logoUrl,
+  brandColor,
+}: {
+  slug: string;
+  name: string;
+  symbol: string | null;
+  logoUrl: string | null;
+  brandColor: string | null;
+}) {
+  const hasGlobe = (GLOBE_CHAINS as readonly string[]).includes(name);
+  const map = api.developer.nodeMap.useQuery(
+    { chain: name },
+    { staleTime: 600_000, enabled: hasGlobe },
+  );
+
+  return (
+    <>
+      <section className="panel px-6 py-5 lg:px-7">
+        <div className="flex flex-wrap items-center gap-3">
+          <ChainAvatar
+            name={name}
+            logoUrl={logoUrl}
+            brandColor={brandColor}
+            size={40}
+          />
+          <h1 className="text-[28px] leading-none font-semibold tracking-tight">
+            {name}
+          </h1>
+          {symbol && (
+            <span className="text-ink-faint text-[13px] tracking-wide uppercase">
+              {symbol}
+            </span>
+          )}
+        </div>
+        <p className="text-ink-muted mt-2.5 text-[12.5px] leading-relaxed">
+          The engineering view. Switch back to research mode in the bar above
+          for what {name} is worth against what it earns.
+        </p>
+      </section>
+
+      <ChainDeveloper slug={slug} name={name} />
+
+      {hasGlobe && map.data && (
+        <Panel
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Where {name} physically is
+              <Explain term="nodeGeography" />
+            </span>
+          }
+          subtitle="One point per distinct location, not per node. Drag the globe to turn it."
+          bodyClassName="px-4 pt-2 pb-4"
+        >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
+            <NodeGlobe map={map.data} height={380} />
+            <div className="space-y-3">
+              <div>
+                <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
+                  {map.data.unit}
+                </p>
+                <p className="tnum mt-0.5 text-[18px] font-medium">
+                  {formatInteger(map.data.totalNodes)}
+                </p>
+                <p className="text-ink-faint text-[11px] leading-snug">
+                  across {formatInteger(map.data.points.length)} locations
+                </p>
+              </div>
+              {map.data.countries.length > 0 && (
+                <ul className="space-y-1">
+                  {map.data.countries.slice(0, 6).map((row) => (
+                    <li
+                      key={row.country}
+                      className="flex items-baseline gap-2 text-[11.5px]"
+                    >
+                      <span className="text-ink-secondary truncate">
+                        {row.country}
+                      </span>
+                      <span className="tnum text-ink-faint ml-auto">
+                        {formatInteger(row.count)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-ink-faint text-[11px] leading-relaxed">
+                {map.data.observed ? "Observed by " : ""}
+                <a
+                  href={map.data.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-ink-secondary underline underline-offset-2"
+                >
+                  {map.data.source}
+                </a>
+              </p>
+            </div>
+          </div>
+        </Panel>
+      )}
+    </>
   );
 }

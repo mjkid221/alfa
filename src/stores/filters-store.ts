@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { useEffect } from "react";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
@@ -127,6 +128,21 @@ function sanitiseMode(candidate: unknown): ScreenMode {
   return MODES.includes(candidate as ScreenMode)
     ? (candidate as ScreenMode)
     : DEFAULT_MODE;
+}
+
+/**
+ * Rehydrate the persisted store, once, after mount.
+ *
+ * `skipHydration` is on so the server-rendered defaults and the first client
+ * render agree, which means **every page that reads this store has to ask for
+ * hydration**. Only the home screen did, so a chain page opened directly read
+ * the defaults forever: the mode switch in the bar said research while
+ * localStorage said developer, and the page believed the wrong one.
+ */
+export function useRehydrateFilters(): void {
+  useEffect(() => {
+    void useFiltersStore.persist.rehydrate();
+  }, []);
 }
 
 export const useFiltersStore = create<FiltersState>()(

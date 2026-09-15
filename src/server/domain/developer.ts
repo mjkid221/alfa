@@ -13,7 +13,12 @@ import { fetchRollupTech, normaliseChainName } from "~/server/sources/l2beat";
 import { fetchProposals, type ProposalFeed } from "~/server/sources/proposals";
 import { fetchChainsTvl } from "~/server/sources/defillama";
 import { settle } from "~/server/lib/http";
-import { CONTRACT_SIZE_LIMIT, EIP170_LIMIT, VM_FAMILY } from "./chain-tech";
+import {
+  CONTRACT_SIZE_LIMIT,
+  CONTRACT_SIZE_MEASURED,
+  EIP170_LIMIT,
+  VM_FAMILY,
+} from "./chain-tech";
 import { getSnapshot } from "./aggregate";
 
 /**
@@ -45,6 +50,13 @@ export interface DeveloperMetrics {
   stage: string | null;
   /** Largest deployable contract in bytes. EVM chains only. */
   contractSizeLimit: number | null;
+  /**
+   * Whether that figure was measured against the chain or is EIP-170 assumed
+   * in the absence of one. Nine chains refused the probe, and a default
+   * presented as a finding is exactly how the old Arbitrum entry came to be
+   * wrong — so the interface can say which it is looking at.
+   */
+  contractSizeSource: "measured" | "assumed" | null;
   gas: GasReading | null;
   developers: DevActivity | null;
   decentralisation: Decentralisation | null;
@@ -54,6 +66,12 @@ export interface DeveloperMetrics {
 export interface DeveloperDataset {
   chains: DeveloperMetrics[];
   generatedAt: string;
+  /**
+   * When the contract size sweep was last run. Unlike everything else here it
+   * is not live — the limits are protocol constants that change at a hard fork,
+   * so the figure a reader needs is when it was last checked.
+   */
+  contractSizeMeasuredAt: string;
   /** Coverage, so the interface can state it rather than implying completeness. */
   coverage: {
     universe: number;
@@ -62,6 +80,8 @@ export interface DeveloperDataset {
     /** Chains that answered *and* declared a block ceiling. Below `gas`. */
     gasLimit: number;
     contractSize: number;
+    /** Of those, the ones actually measured rather than assumed from EIP-170. */
+    contractSizeMeasured: number;
     stage: number;
     developers: number;
     decentralisation: number;
@@ -141,6 +161,11 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
       contractSizeLimit: isEvm(vm)
         ? (CONTRACT_SIZE_LIMIT[chain.name] ?? EIP170_LIMIT)
         : null,
+      contractSizeSource: !isEvm(vm)
+        ? null
+        : CONTRACT_SIZE_LIMIT[chain.name] !== undefined
+          ? "measured"
+          : "assumed",
       gas: reading,
       developers: developers?.[chain.name] ?? null,
       decentralisation: decentralisation?.[chain.name] ?? null,
@@ -151,6 +176,7 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
   return {
     chains: rows,
     generatedAt: new Date().toISOString(),
+    contractSizeMeasuredAt: CONTRACT_SIZE_MEASURED,
     coverage: {
       universe: rows.length,
       vm: rows.filter((r) => r.vm).length,
@@ -160,6 +186,9 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
       // overstate how many have a block limit by exactly those six.
       gasLimit: rows.filter((r) => r.gas?.gasLimit != null).length,
       contractSize: rows.filter((r) => r.contractSizeLimit != null).length,
+      contractSizeMeasured: rows.filter(
+        (r) => r.contractSizeSource === "measured",
+      ).length,
       stage: rows.filter((r) => r.stage).length,
       developers: rows.filter((r) => r.developers).length,
       decentralisation: rows.filter((r) => r.decentralisation).length,

@@ -568,7 +568,7 @@ a filter by virtual machine. None of it feeds the score.
 |---|---|---|
 | Gas price | The chain's own node, via public RPC | 42 of 85 |
 | Block gas limit and fullness | The same block the price came from | 36 of 85 |
-| Contract size limit | Each chain's own specification | 48 of 85 |
+| Contract size limit | Measured against each chain | 48 of 85, 39 measured |
 | Rollup stage | L2Beat | 21 of 85 |
 | Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
 | Monthly active developers | Electric Capital | 45 of 85 |
@@ -645,6 +645,22 @@ one company owns the hardware — Hedera's 25 council nodes sit in seven countri
 and 52% of them are at Amazon. That figure needed the provider names folding
 first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
 Inc." and "Amazon.com", which had been quietly reporting 32%.
+
+**The chain page is two pages.** Developer mode replaces it rather than adding
+to it: someone asking what it costs to deploy on a chain does not want a
+value-gap verdict above the answer, so the tier, the multiples and the peer
+scale give way to what it runs, what it charges, who runs it, what is being
+proposed — and, for the twelve chains that have one, its own globe.
+
+**Contract size limits are measured, not assumed.** There is no RPC method that
+returns one, so each chain is asked: six bytes of initcode that deploy an
+N-byte contract, binary-searched through `eth_estimateGas` until the chain
+refuses. The table this replaced held a single hand-written entry and it was
+wrong — Arbitrum enforces the same 24,576 as everyone else, while four chains
+genuinely differ: **Monad at 131,072**, Celo at 65,536, Polygon PoS and
+Berachain at 32,768. Nine chains refused the probe and fall back to EIP-170,
+reported as assumed rather than measured, because a default presented as a
+finding is how the wrong entry got there in the first place.
 
 Every chain page now carries the same engineering view of that one chain: what
 it runs, what it charges, who runs it, and what is being proposed. That last one

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { AlphaMap, type AlphaPoint } from "~/components/chart/alpha-map";
 import {
@@ -27,7 +27,7 @@ import { Panel } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import { rebaseUniverse } from "~/lib/rebase-universe";
 import { capLabel } from "~/lib/valuation-basis";
-import { useFiltersStore } from "~/stores/filters-store";
+import { useFiltersStore, useRehydrateFilters } from "~/stores/filters-store";
 import type { DeveloperMetrics } from "~/server/domain/developer";
 import type { ChainSnapshot } from "~/server/domain/types";
 import { api } from "~/trpc/react";
@@ -44,9 +44,7 @@ export function Screen() {
   const setMode = useFiltersStore((state) => state.setMode);
   const vm = useFiltersStore((state) => state.vm);
   const setVm = useFiltersStore((state) => state.setVm);
-  useEffect(() => {
-    void useFiltersStore.persist.rehydrate();
-  }, []);
+  useRehydrateFilters();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useCommandShortcut(useCallback(() => setPaletteOpen((open) => !open), []));
@@ -382,7 +380,10 @@ export function Screen() {
 
         <ModeSwap mode={mode} stagger={105}>
           {mode === "developer" ? (
-            <DeveloperSources coverage={developer.data?.coverage ?? null} />
+            <DeveloperSources
+              coverage={developer.data?.coverage ?? null}
+              measuredAt={developer.data?.contractSizeMeasuredAt}
+            />
           ) : (
             <MethodologyPanel
               methodology={methodology.data}

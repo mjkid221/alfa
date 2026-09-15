@@ -84,31 +84,93 @@ export const VM_FAMILY: Record<string, VmFamily> = {
 /* ------------------------------------------------------- contract limit ---- */
 
 /**
- * The largest deployable contract, in bytes.
+ * The largest deployable contract, in bytes — **measured, not assumed**.
  *
- * EIP-170 fixed this at 24,576 for Ethereum and every chain that inherited its
- * rules, which is most of them — so this table holds only the exceptions and
- * the default is applied to any EVM chain not listed. It is a protocol
- * constant, not a measurement: there is no RPC method that returns it.
+ * This table used to hold one entry (Arbitrum at 49,152) and default everything
+ * else to EIP-170's 24,576. Both halves were wrong: Arbitrum enforces 24,576
+ * like everyone else, and four chains do not.
+ *
+ * ## How each figure was obtained
+ *
+ * There is no RPC method that returns the limit, so it is measured by asking
+ * the chain whether it would accept a contract of a given size. Six bytes of
+ * initcode deploy an N-byte contract of zeros:
+ *
+ *   PUSH3 <N>  PUSH1 0x00  RETURN     ->  0x62 NNNNNN 60 00 f3
+ *
+ * `eth_estimateGas` on that runs it without sending anything, and a chain over
+ * its ceiling answers "max code size exceeded". Binary search between 100 bytes
+ * and 2 MB then finds the exact boundary. Run 15 September 2026 against every
+ * EVM chain in the universe; deviations were confirmed on a second, independent
+ * endpoint before being recorded here, and Monad's and Polygon's against their
+ * own specifications (Monad's docs, and Polygon's PIP-30, which sets 0x8000).
+ *
+ * Two confounds had to be separated from a real rejection: depositing code
+ * costs 200 gas a byte, so 128 KB needs 26M gas and a node will answer "out of
+ * gas" long before it answers "too big"; and some nodes refuse a sender that is
+ * not a funded account.
+ *
+ * **A rejection is strong evidence and an acceptance is weaker** — a node may
+ * decline to enforce the rule during estimation even though consensus does. So
+ * anything above 24,576 was only recorded where a second endpoint agreed.
+ *
+ * ## What is not here
+ *
+ * Nine chains could not be measured: their public RPC refused the probe
+ * (Hedera, zkSync Era, Abstract, Mezo, Pharos, RISE, Robinhood Chain), or the
+ * answer could not be separated from a gas ceiling (MegaETH, whose two
+ * endpoints disagreed at 524,288 and 196,060), or no limit was found below 2 MB
+ * at all (Rootstock, on three endpoints). Those fall back to EIP-170 and are
+ * reported as **assumed** rather than measured, because a default presented as
+ * a finding is how the Arbitrum entry came to be wrong in the first place.
  */
 export const EIP170_LIMIT = 24_576;
 
+/** When the sweep below was run. Re-run it rather than editing by hand. */
+export const CONTRACT_SIZE_MEASURED = "2026-09-15";
+
 export const CONTRACT_SIZE_LIMIT: Record<string, number> = {
-  // Arbitrum raised the ceiling because its fee model does not price bytecode
-  // the way mainnet's does.
-  Arbitrum: 49_152,
+  Arbitrum: 24576,
+  "Avalanche C-Chain": 24576,
+  "BNB Chain": 24576,
+  BOB: 24576,
+  Base: 24576,
+  Berachain: 32768,
+  Blast: 24576,
+  Celo: 65536,
+  Citrea: 24576,
+  Cronos: 24576,
+  Ethereum: 24576,
+  Etherlink: 24576,
+  Flare: 24576,
+  Flow: 24576,
+  Fluent: 24576,
+  Fraxtal: 24576,
+  "Gnosis Chain": 24576,
+  "Immutable zkEVM": 24576,
+  Ink: 24576,
+  Kaia: 24576,
+  Katana: 24576,
+  Linea: 24576,
+  Mantle: 24576,
+  Monad: 131072,
+  Morph: 24576,
+  "OP Mainnet": 24576,
+  Plasma: 24576,
+  "Polygon PoS": 32768,
+  PulseChain: 24576,
+  ReyaChain: 24576,
+  Rollux: 24576,
+  "Ronin Network": 24576,
+  Scroll: 24576,
+  Sonic: 24576,
+  Stable: 24576,
+  Tempo: 24576,
+  Unichain: 24576,
+  WorldChain: 24576,
+  "X Layer": 24576,
 };
 
-/* ----------------------------------------------------------- rpc access ---- */
-
-/**
- * Alchemy network slugs, for the chains where a public RPC is unreliable.
- *
- * The adapter tries chainlist's public endpoints first and only falls back
- * here, so this costs nothing for the 39 chains that answer publicly. Measured:
- * all of these answered `eth_getBlockByNumber`, and Solana answered
- * `getEpochInfo`.
- */
 export const ALCHEMY_NETWORK: Record<string, string> = {
   Ethereum: "eth-mainnet",
   Base: "base-mainnet",

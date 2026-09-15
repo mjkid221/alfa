@@ -398,9 +398,11 @@ function Stat({
  */
 export function DeveloperSources({
   coverage,
+  measuredAt,
   className,
 }: {
   coverage: DeveloperDataset["coverage"] | null;
+  measuredAt?: string;
   className?: string;
 }) {
   if (!coverage) return null;
@@ -421,9 +423,9 @@ export function DeveloperSources({
     },
     {
       what: "Contract size limit",
-      where: "The chain's own specification",
+      where: "Measured against each chain, by asking it to size a deployment",
       covered: coverage.contractSize,
-      note: "The one curated figure here. No RPC method returns it — it is a protocol constant, and every EVM chain has one.",
+      note: `No RPC method returns it, so it is measured: six bytes of initcode that deploy an N-byte contract, binary-searched through eth_estimateGas until the chain refuses. ${coverage.contractSizeMeasured} of the ${coverage.contractSize} answered${measuredAt ? ` when swept on ${measuredAt}` : ""}; the rest refused the probe and fall back to EIP-170, marked as assumed. It is a protocol constant, so it moves only at a hard fork.`,
     },
     {
       what: "Virtual machine and rollup stack",
