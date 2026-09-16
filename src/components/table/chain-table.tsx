@@ -21,10 +21,10 @@ import type { GlossaryTerm } from "~/lib/glossary";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
-  formatFeeUsd,
   formatGas,
   formatGasWithUnit,
   formatInteger,
+  formatMeterValue,
   formatMultiple,
   formatPercent,
   formatSigned,
@@ -34,6 +34,7 @@ import { divergingHue } from "~/lib/palette";
 import { capLabel, capShort, type CapBasis } from "~/lib/valuation-basis";
 import type { ChainSnapshot } from "~/server/domain/types";
 import type { DeveloperMetrics } from "~/server/domain/developer";
+import type { ExecutionMeter } from "~/server/sources/execution";
 import type { ScreenMode, VmFilter } from "~/lib/screen-mode";
 
 /**
@@ -62,13 +63,9 @@ type SortKey =
   // Developer mode. The same table, a different question.
   | "gasPrice"
   | "gasLimit"
-  | "gasUsedPct"
   | "devs"
-  | "nakamoto"
-  | "transferCost"
   | "vm"
-  | "contractSize"
-  | "stage";
+  | "contractSize";
 
 /**
  * Which chains a group of columns means anything for.
@@ -423,6 +420,16 @@ export function ChainTable({
    * one. The order is what lets the header span them, and the spanning header
    * is what stops four columns of dashes reading as four failures.
    */
+  /**
+   * Developer mode's columns — five, and each one a question most of the
+   * universe can answer.
+   *
+   * Four were removed rather than kept as mostly-empty: the Nakamoto
+   * coefficient (20 of 85), rollup stage (21), block fullness and the transfer
+   * cost. They are all still on the chain pages, where a reader has asked about
+   * one chain and an absent figure costs a line rather than a column. A table
+   * of 85 rows is the wrong place for a column that is blank for 64 of them.
+   */
   const developerColumns = useMemo<Column[]>(
     () => [
       {
@@ -442,46 +449,6 @@ export function ChainTable({
           ) : (
             <Missing />
           ),
-      },
-      {
-        key: "transferCost",
-        label: "Transfer",
-        hint: "What one simple transfer of the native token costs, in dollars. The one cost figure that means the same thing on every chain — hover a cell for what was counted.",
-        term: "transferCost",
-        group: "universal",
-        align: "right",
-        width: 128,
-        value: (_chain, dev) => dev?.transferCost?.usd ?? null,
-        render: (_chain, { dev }) => {
-          const cost = dev?.transferCost;
-          if (!cost) return <Missing />;
-          if (cost.usd === null) {
-            // The fee is known and the token is not priced here — Gnosis
-            // charges in xDAI, which is not one of the 85. Saying so beats a
-            // dash, which would claim the fee itself could not be read.
-            return (
-              <span
-                className="text-ink-faint text-[11.5px]"
-                title={`${cost.native} ${cost.symbol ?? "tokens"} — ${cost.basis}. No price for ${cost.symbol ?? "this token"} in the universe, so it cannot be put in dollars.`}
-              >
-                no price
-              </span>
-            );
-          }
-          return (
-            <span
-              className="tnum text-[12.5px]"
-              title={`${cost.native} ${cost.symbol ?? ""} — ${cost.basis}. Source: ${cost.source}.`}
-            >
-              {formatFeeUsd(cost.usd)}
-              {!cost.exact && (
-                // Two chains need a transaction size assumed, and the figure
-                // says which it is rather than presenting all of them alike.
-                <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
-              )}
-            </span>
-          );
-        },
       },
       {
         key: "devs",
@@ -505,96 +472,57 @@ export function ChainTable({
           ),
       },
       {
-        key: "nakamoto",
-        label: "Nakamoto",
-        hint: "Smallest number of parties controlling more than a third of consensus weight, computed from each chain's own validator set. What one party is varies — hover a figure to see.",
-        term: "nakamoto",
-        group: "universal",
-        align: "right",
-        width: 124,
-        value: (_chain, dev) => dev?.decentralisation?.nakamoto ?? null,
-        render: (_chain, { dev }) =>
-          dev?.decentralisation ? (
-            // The unit is in the title rather than the cell: a coefficient of 7
-            // over Cardano's pool *operators* and one over Osmosis' validators
-            // are answers to the same question about different objects, and the
-            // column cannot say so in four characters.
-            <span
-              className="tnum text-[12.5px]"
-              title={`${dev.decentralisation.nakamoto} of ${formatCount(dev.decentralisation.validators)} ${dev.decentralisation.unit} hold more than a third`}
-            >
-              {dev.decentralisation.nakamoto}
-            </span>
-          ) : (
-            <Missing />
-          ),
-      },
-      {
         key: "gasPrice",
         label: "Gas price",
-        hint: "Current gas price, read from a node on the chain itself. Quoted in wei or gwei, whichever keeps the figure readable.",
+        hint: "What one unit of execution costs, in whatever the chain meters — gas on an EVM chain, a compute unit on Solana, a virtual byte on Bitcoin. Each figure carries its own unit.",
         term: "gasPrice",
-        group: "evm",
+        group: "universal",
         align: "right",
-        width: 128,
-        applies: (_chain, dev) => isEvmRow(dev),
-        value: (_chain, dev) => dev?.gas?.gasPriceGwei ?? null,
-        render: (_chain, { dev }) => <Gas value={dev?.gas?.gasPriceGwei} />,
+        width: 168,
+        value: (_chain, dev) => dev?.execution?.price ?? null,
+        render: (_chain, { dev }) => <ExecutionPrice meter={dev?.execution} />,
       },
       {
         key: "gasLimit",
-        label: "Block gas limit",
-        hint: "How much gas fits in one block. Blank where the chain does not meaningfully have a limit.",
+        label: "Block limit",
+        hint: "How much execution fits in one block, in the chain's own unit. Blank where a chain does not bound a block, or bounds it over a day rather than a block.",
         term: "gasLimit",
-        group: "evm",
+        group: "universal",
         align: "right",
-        width: 148,
-        applies: (_chain, dev) => isEvmRow(dev),
-        value: (_chain, dev) => dev?.gas?.gasLimit ?? null,
-        render: (_chain, { dev }) =>
-          dev?.gas?.gasLimit ? (
-            <span className="tnum text-[12.5px]">
-              {formatCount(dev.gas.gasLimit)}
-            </span>
-          ) : dev?.gas?.limitIsSentinel ? (
-            // Said in words, because a dash here would mean the same as the dash
-            // on a chain whose node never answered — and they are opposite facts.
-            <span
-              className="text-ink-muted text-[12.5px]"
-              title="This chain declares no block ceiling: Arbitrum Nitro and the zkSync stack report a sentinel where the field is required."
-            >
-              No cap
-            </span>
-          ) : (
-            <Missing />
-          ),
-      },
-      {
-        key: "gasUsedPct",
-        label: "Block full",
-        hint: "How much of the last block's gas limit was used.",
-        term: "gasLimit",
-        group: "evm",
-        align: "right",
-        width: 120,
-        applies: (_chain, dev) => isEvmRow(dev),
-        value: (_chain, dev) => dev?.gas?.gasUsedPct ?? null,
-        render: (_chain, { dev }) =>
-          dev?.gas?.gasUsedPct !== null &&
-          dev?.gas?.gasUsedPct !== undefined ? (
-            <PercentileBar value={dev.gas.gasUsedPct} width={64} />
-          ) : dev?.gas?.limitIsSentinel ? (
-            // Fullness is a fraction of the limit, so a chain without one has no
-            // fullness either — for the same reason, not a missing reading.
-            <span
-              className="text-ink-muted text-[12.5px]"
-              title="Fullness is a fraction of the block limit, and this chain declares none."
-            >
-              n/a
-            </span>
-          ) : (
-            <Missing />
-          ),
+        width: 172,
+        value: (_chain, dev) => dev?.execution?.blockLimit ?? null,
+        render: (_chain, { dev }) => {
+          const meter = dev?.execution;
+          if (meter?.blockLimit != null) {
+            return (
+              <span
+                className="tnum text-[12.5px]"
+                title={`${meter.blockLimit.toLocaleString("en-GB")} ${meter.limitLabel}${meter.limitAssumed ? " — a protocol constant, not a reading" : ""}. Source: ${meter.source}.`}
+              >
+                {formatMeterValue(meter.blockLimit)}
+                <span className="text-ink-faint ml-1 text-[10.5px]">
+                  {meter.limitLabel}
+                </span>
+                {meter.limitAssumed && (
+                  <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
+                )}
+              </span>
+            );
+          }
+          if (meter?.limitUncapped) {
+            // Said in words, because a dash here would mean the same as the
+            // dash on a chain whose node never answered — opposite facts.
+            return (
+              <span
+                className="text-ink-muted text-[12.5px]"
+                title="This chain declares no block ceiling. Arbitrum Nitro and the zkSync stack report a sentinel where the field is required; dYdX bounds a block by bytes and time instead."
+              >
+                No cap
+              </span>
+            );
+          }
+          return <Missing />;
+        },
       },
       {
         key: "contractSize",
@@ -623,31 +551,6 @@ export function ChainTable({
               {dev.contractSizeSource === "assumed" && (
                 <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
               )}
-            </span>
-          ) : (
-            <Missing />
-          ),
-      },
-      {
-        key: "stage",
-        label: "Stage",
-        hint: "L2Beat's decentralisation ladder for rollups. Blank for chains it does not apply to.",
-        term: "rollupStage",
-        group: "rollup",
-        align: "left",
-        width: 116,
-        // A rollup is a chain L2Beat tracks at all; an L1 is not missing a
-        // stage, it has nowhere to stand on the ladder.
-        applies: (chain) => chain.layer === "L2",
-        value: (_chain, dev) => {
-          // Sorted by how far up the ladder, so Stage 2 leads.
-          const match = /(\d)/.exec(dev?.stage ?? "");
-          return match ? Number(match[1]) : null;
-        },
-        render: (_chain, { dev }) =>
-          dev?.stage ? (
-            <span className="border-hairline text-ink-secondary rounded-full border px-1.5 py-0.5 text-[10.5px] tracking-wide uppercase">
-              {dev.stage}
             </span>
           ) : (
             <Missing />
@@ -993,6 +896,28 @@ function NotApplicable({ reason }: { reason: string }) {
   );
 }
 
+/**
+ * An execution price, in whatever the chain meters.
+ *
+ * `gwei` is the one label the renderer interprets rather than prints: EVM
+ * chains span eleven orders of magnitude — Gnosis quotes 9 wei where Hedera
+ * quotes 1,110 gwei — so `formatGas` picks wei or gwei per row. Every other
+ * chain publishes a figure that is already readable in its own unit, so those
+ * are printed as given.
+ */
+function ExecutionPrice({ meter }: { meter?: ExecutionMeter | null }) {
+  if (meter?.price == null) return <Missing />;
+  if (meter.priceLabel === "gwei") return <Gas value={meter.price} />;
+  return (
+    <span className="tnum text-[12.5px]" title={`Source: ${meter.source}.`}>
+      {formatMeterValue(meter.price)}
+      <span className="text-ink-faint ml-1 text-[10.5px]">
+        {meter.priceLabel}
+      </span>
+    </span>
+  );
+}
+
 function Gas({ value }: { value: number | null | undefined }) {
   const gas = formatGas(value);
   if (gas.unit === null) {
@@ -1216,9 +1141,10 @@ const scoreText = (value: number | null) =>
  * situation.
  */
 function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
-  const evm = isEvmRow(dev ?? null);
+  const meter = dev?.execution;
   /** "n/a" once we know it does not apply; "—" while we do not know yet. */
-  const evmValue = (value: string) => (dev ? (evm ? value : "n/a") : "—");
+  const evmValue = (value: string) =>
+    dev ? (isEvmRow(dev) ? value : "n/a") : "—";
   return (
     <>
       <MobileStat label="VM" value={dev?.vm ?? "—"} />
@@ -1230,32 +1156,24 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
         delta={dev?.developers?.changeYoy ?? null}
       />
       <MobileStat
-        label="Nakamoto"
-        value={dev?.decentralisation?.nakamoto?.toString() ?? "—"}
-      />
-      <MobileStat
-        label="Transfer"
+        label="Gas price"
         value={
-          dev?.transferCost
-            ? dev.transferCost.usd === null
-              ? "no price"
-              : formatFeeUsd(dev.transferCost.usd)
+          meter?.price != null
+            ? meter.priceLabel === "gwei"
+              ? formatGasWithUnit(meter.price)
+              : `${formatMeterValue(meter.price)} ${meter.priceLabel}`
             : "—"
         }
       />
       <MobileStat
-        label="Gas price"
-        value={evmValue(formatGasWithUnit(dev?.gas?.gasPriceGwei))}
-      />
-      <MobileStat
         label="Block limit"
-        value={evmValue(
-          dev?.gas?.gasLimit
-            ? formatCount(dev.gas.gasLimit)
-            : dev?.gas?.limitIsSentinel
+        value={
+          meter?.blockLimit != null
+            ? `${formatMeterValue(meter.blockLimit)} ${meter.limitLabel}`
+            : meter?.limitUncapped
               ? "No cap"
-              : "—",
-        )}
+              : "—"
+        }
       />
       <MobileStat
         label="Contract limit"
@@ -1263,16 +1181,6 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
           dev?.contractSizeLimit
             ? `${formatInteger(dev.contractSizeLimit)} B`
             : "—",
-        )}
-      />
-      <MobileStat
-        label="Block full"
-        value={evmValue(
-          dev?.gas?.gasUsedPct === null || dev?.gas?.gasUsedPct === undefined
-            ? dev?.gas?.limitIsSentinel
-              ? "n/a"
-              : "—"
-            : `${dev.gas.gasUsedPct.toFixed(0)}%`,
         )}
       />
     </>

@@ -1,10 +1,6 @@
 import "server-only";
 
-import {
-  fetchGasReadings,
-  fetchRpcRegistry,
-  type GasReading,
-} from "~/server/sources/chain-rpc";
+import { fetchGasReadings, type GasReading } from "~/server/sources/chain-rpc";
 import {
   fetchDecentralisation,
   type Decentralisation,
@@ -16,9 +12,9 @@ import {
 import { fetchRollupTech, normaliseChainName } from "~/server/sources/l2beat";
 import { fetchProposals, type ProposalFeed } from "~/server/sources/proposals";
 import {
-  fetchTransferFees,
-  type TransferFee,
-} from "~/server/sources/transfer-cost";
+  fetchExecutionMeters,
+  type ExecutionMeter,
+} from "~/server/sources/execution";
 import { fetchChainsTvl } from "~/server/sources/defillama";
 import { settle } from "~/server/lib/http";
 import {
@@ -67,32 +63,17 @@ export interface DeveloperMetrics {
   contractSizeSource: "measured" | "assumed" | null;
   gas: GasReading | null;
   /**
-   * What one simple transfer costs, in the chain's own token and in dollars.
+   * What a unit of execution costs here and how many fit in a block, in
+   * whatever the chain meters — gas, compute units, virtual bytes, operations.
    *
-   * The only figure in developer mode that means the same thing on every
-   * chain. Gas price does not: gwei is an EVM accounting unit, and even
-   * between two EVM chains it says nothing about cost until it is multiplied
-   * by gas and a token price.
+   * On an EVM chain this is the same reading `gas` carries, restated in the
+   * shared shape. Everywhere else it comes from the chain's own endpoints, so
+   * the gas columns are answerable by chains that have never heard of gwei.
    */
-  transferCost: TransferCost | null;
+  execution: ExecutionMeter | null;
   developers: DevActivity | null;
   decentralisation: Decentralisation | null;
   proposals: ProposalFeed | null;
-}
-
-/** One transfer's fee, priced. See `sources/transfer-cost.ts` for the models. */
-export interface TransferCost {
-  /** In the chain's own token. */
-  native: number;
-  /** The token's ticker, for rendering the native figure. */
-  symbol: string | null;
-  /** In US dollars, where the chain has a price. */
-  usd: number | null;
-  /** What was counted — "21,000 gas", "one signature", "141 vB". */
-  basis: string;
-  /** False where a transaction size had to be assumed. Two chains: BTC, ADA. */
-  exact: boolean;
-  source: string;
 }
 
 export interface DeveloperDataset {
@@ -111,10 +92,10 @@ export interface DeveloperDataset {
     gas: number;
     /** Chains that answered *and* declared a block ceiling. Below `gas`. */
     gasLimit: number;
-    /** Chains with a transfer cost at all, EVM and otherwise. */
-    transferCost: number;
-    /** Of those, the ones that could also be priced in dollars. */
-    transferCostUsd: number;
+    /** Chains that publish a price for a unit of execution. */
+    executionPrice: number;
+    /** Of those, the ones that also cap how much fits in a block. */
+    executionLimit: number;
     contractSize: number;
     /** Of those, the ones actually measured rather than assumed from EIP-170. */
     contractSizeMeasured: number;
@@ -129,71 +110,36 @@ const isEvm = (vm: string | null) =>
   vm !== null && /^(evm|.*evm)$/i.test(vm.replace(/\s+/g, ""));
 
 /**
- * The intrinsic gas cost of a value transfer, from the yellow paper.
+ * One execution meter, from whichever half of the app knows it.
  *
- * Not an estimate and not a measurement: 21,000 is what the EVM charges before
- * a single byte of calldata, so an EVM chain's transfer cost is exactly this
- * times its gas price. It is the reason the EVM half of this needs no request
- * of its own.
- */
-const EVM_TRANSFER_GAS = 21_000;
-
-/**
- * One transfer's cost, from whichever half of the app knows it.
+ * An EVM chain's reading is already taken — `chain-rpc.ts` reads the gas price,
+ * the block limit and the fill from the same block — so this only restates it
+ * in the shared shape. Everything else comes from `sources/execution.ts`.
  *
- * EVM chains are arithmetic on a reading already taken; everything else comes
- * from `transfer-cost.ts`. The dollar figure is the snapshot's own price, so
- * this adds no market source and nothing here reaches the score — the price is
- * being read, not modelled.
+ * The chain's own adapter wins where both exist. Hedera answers an Ethereum RPC
+ * *and* publishes its own fee schedule, and the second is the one that
+ * describes what it actually charges.
  */
-function transferCostOf(
-  name: string,
-  ownSymbol: string | null,
-  ownPrice: number | null,
-  gasSymbol: string | null,
-  priceOf: (symbol: string | null) => number | null,
+function executionOf(
   gas: GasReading | null,
-  fee: TransferFee | null,
-): TransferCost | null {
-  if (fee) {
-    // A non-EVM chain's fee is denominated in its own token by definition —
-    // there is no settlement layer underneath it charging in something else.
-    const usd =
-      ownPrice !== null && ownPrice > 0 ? fee.native * ownPrice : null;
-    return {
-      native: fee.native,
-      symbol: ownSymbol,
-      // Hedera prices its schedule in dollars and derives the token amount, so
-      // its own figure wins over one reconstructed from a market price.
-      usd: fee.usd ?? usd,
-      basis: fee.basis,
-      exact: fee.exact,
-      source: fee.source,
-    };
-  }
-
-  const gwei = gas?.gasPriceGwei ?? null;
-  if (gwei === null || !(gwei > 0)) return null;
-  const native = (gwei * EVM_TRANSFER_GAS) / 1e9;
-
-  /*
-   * Priced in the token **gas is paid in**, which is not always the chain's
-   * own. Every ETH-settled rollup charges in ETH while its governance token
-   * trades separately: pricing Arbitrum's 0.00000042 ETH in ARB gave
-   * $0.00000007 against a true $0.001, four orders of magnitude cheap. The
-   * registry's `nativeCurrency.symbol` is the authority, and where no price
-   * for that ticker exists in the universe the cost shows without a dollar
-   * figure rather than with a wrong one.
-   */
-  const symbol = gasSymbol ?? ownSymbol;
-  const price = priceOf(symbol);
+  meter: ExecutionMeter | null,
+): ExecutionMeter | null {
+  if (meter) return meter;
+  if (!gas) return null;
   return {
-    native,
-    symbol,
-    usd: price !== null && price > 0 ? native * price : null,
-    basis: `${EVM_TRANSFER_GAS.toLocaleString("en-GB")} gas, the EVM's intrinsic cost of a transfer`,
-    exact: true,
-    source: `${name}'s own node`,
+    price: gas.gasPriceGwei,
+    // Read as written by the table, which switches this to wei for the chains
+    // quoting single digits of a gwei.
+    priceLabel: "gwei",
+    blockLimit: gas.gasLimit,
+    limitLabel: "gas",
+    limitAssumed: false,
+    // The 2^50 sentinel six chains report: Arbitrum Nitro and the zkSync stack
+    // do not bound a block, and saying nothing would read as "we could not
+    // find out" rather than "there is no ceiling".
+    limitUncapped: gas.limitIsSentinel,
+    usedPct: gas.gasUsedPct,
+    source: "the chain's own node",
   };
 }
 
@@ -214,30 +160,7 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
     chainId: chainIdByName.get(chain.keys.llamaName ?? chain.name) ?? null,
   }));
 
-  /*
-   * Ticker to price, built from the universe this app already prices.
-   *
-   * It is how an ETH-settled rollup's gas gets an ETH price without adding a
-   * market source: Ethereum is in the universe, so "ETH" resolves. Where two
-   * chains share a ticker the first wins, which in a universe ranked by TVL is
-   * the larger one — and no two of the 85 collide today.
-   */
-  const priceBySymbol = new Map<string, number>();
-  for (const chain of chains) {
-    const symbol = chain.symbol?.toUpperCase();
-    const price = chain.metrics.price;
-    if (symbol && price !== null && price > 0 && !priceBySymbol.has(symbol)) {
-      priceBySymbol.set(symbol, price);
-    }
-  }
-  const priceOf = (symbol: string | null) =>
-    symbol ? (priceBySymbol.get(symbol.toUpperCase()) ?? null) : null;
-
-  // Which token each EVM chain charges gas in. Read from the same registry the
-  // RPC endpoints come from, so it costs no extra request.
-  const registry = await settle("rpc:registry", fetchRpcRegistry());
-
-  const [gas, developers, decentralisation, proposals, tech, transferFees] =
+  const [gas, developers, decentralisation, proposals, tech, meters] =
     await Promise.all([
       settle("chain-rpc", fetchGasReadings(gasTargets)),
       settle(
@@ -252,14 +175,12 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
       ),
       settle("proposals", fetchProposals(chains.map((c) => c.name))),
       settle("l2beat:tech", fetchRollupTech()),
-      settle("transfer-cost", fetchTransferFees()),
+      settle("execution", fetchExecutionMeters()),
     ]);
 
   const rows: DeveloperMetrics[] = chains.map((chain) => {
     const fromL2Beat = tech?.[normaliseChainName(chain.name)];
     const reading = gas?.[chain.name] ?? null;
-    const chainId =
-      chainIdByName.get(chain.keys.llamaName ?? chain.name) ?? null;
 
     /*
      * Three ways to know the virtual machine, best evidence first.
@@ -298,15 +219,7 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
           ? "measured"
           : "assumed",
       gas: reading,
-      transferCost: transferCostOf(
-        chain.name,
-        chain.symbol,
-        chain.metrics.price,
-        chainId === null ? null : (registry?.[chainId]?.symbol ?? null),
-        priceOf,
-        isEvm(vm) ? reading : null,
-        transferFees?.[chain.name] ?? null,
-      ),
+      execution: executionOf(reading, meters?.[chain.name] ?? null),
       developers: developers?.[chain.name] ?? null,
       decentralisation: decentralisation?.[chain.name] ?? null,
       proposals: proposals?.[chain.name] ?? null,
@@ -325,8 +238,9 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
       // a sentinel rather than a ceiling, so a single figure for "gas" would
       // overstate how many have a block limit by exactly those six.
       gasLimit: rows.filter((r) => r.gas?.gasLimit != null).length,
-      transferCost: rows.filter((r) => r.transferCost).length,
-      transferCostUsd: rows.filter((r) => r.transferCost?.usd != null).length,
+      executionPrice: rows.filter((r) => r.execution?.price != null).length,
+      executionLimit: rows.filter((r) => r.execution?.blockLimit != null)
+        .length,
       contractSize: rows.filter((r) => r.contractSizeLimit != null).length,
       contractSizeMeasured: rows.filter(
         (r) => r.contractSizeSource === "measured",

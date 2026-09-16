@@ -45,23 +45,6 @@ interface RawChainlist {
   chainId?: number;
   name?: string;
   rpc?: string[];
-  nativeCurrency?: { symbol?: string; decimals?: number };
-}
-
-/** What the registry is projected down to. */
-export interface RpcEntry {
-  endpoints: string[];
-  /**
-   * The ticker gas is actually paid in — **not** the chain's own token.
-   *
-   * The distinction is the whole reason this field exists. An ETH-settled
-   * rollup charges gas in ETH while its governance token trades separately, so
-   * pricing Arbitrum's gas in ARB read $0.00000007 for a transfer against a
-   * true $0.001 — out by four orders of magnitude, and in the flattering
-   * direction, which is the sort of error a cheap-gas ranking would carry
-   * straight to the top of the table.
-   */
-  symbol: string | null;
 }
 
 /**
@@ -74,17 +57,15 @@ export interface RpcEntry {
  */
 export function fetchRpcRegistry() {
   return cachedValue(
-    // v2: the projection gained `nativeCurrency.symbol`, which was being
-    // discarded along with the rest of the file.
-    "rpc:registry:v2",
+    "rpc:registry:v1",
     { ttlSeconds: 86_400, staleSeconds: 172_800 },
-    async (): Promise<Record<number, RpcEntry>> => {
+    async (): Promise<Record<number, string[]>> => {
       const raw = await fetchJson<RawChainlist[]>(CHAINLIST, {
         timeoutMs: 30_000,
         retries: 1,
       });
 
-      const out: Record<number, RpcEntry> = {};
+      const out: Record<number, string[]> = {};
       for (const entry of Array.isArray(raw) ? raw : []) {
         if (typeof entry.chainId !== "number") continue;
         const usable = (entry.rpc ?? []).filter(
@@ -94,13 +75,7 @@ export function fetchRpcRegistry() {
             !url.includes("${") &&
             !/API_KEY|apikey/i.test(url),
         );
-        const symbol = entry.nativeCurrency?.symbol;
-        if (usable.length > 0 || symbol) {
-          out[entry.chainId] = {
-            endpoints: usable.slice(0, 6),
-            symbol: typeof symbol === "string" ? symbol.toUpperCase() : null,
-          };
-        }
+        if (usable.length > 0) out[entry.chainId] = usable.slice(0, 6);
       }
       return out;
     },
@@ -270,14 +245,14 @@ export function fetchGasReadings(targets: readonly GasTarget[]) {
     `rpc:gas:v2:${fingerprint(ids)}`,
     { ttlSeconds: 60, staleSeconds: 900 },
     async (): Promise<Record<string, GasReading>> => {
-      const registry: Record<number, RpcEntry> = await fetchRpcRegistry().catch(
+      const registry: Record<number, string[]> = await fetchRpcRegistry().catch(
         () => ({}),
       );
 
       const out: Record<string, GasReading> = {};
       await mapLimit(targets, 8, async (target) => {
         const endpoints = target.chainId
-          ? (registry[target.chainId]?.endpoints ?? [])
+          ? (registry[target.chainId] ?? [])
           : [];
         const alchemy = ALCHEMY_NETWORK[target.name] ?? null;
         if (endpoints.length === 0 && !alchemy) return;

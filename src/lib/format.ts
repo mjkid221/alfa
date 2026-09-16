@@ -67,36 +67,32 @@ export function formatPrice(value: number | null | undefined): string {
 }
 
 /**
- * A transaction fee in dollars, across the eleven orders of magnitude the
- * universe actually spans.
+ * A figure in a chain's own execution unit — a price or a block ceiling.
  *
- * Measured 16 September 2026: a transfer costs $0.106 on Bitcoin and
- * $0.0000017 on Stellar. `formatPrice` is the wrong tool — it holds four
- * significant figures, which reads "$0.0000017000" at the cheap end and buries
- * the number in zeros. Two is what a reader compares on; a third would be
- * noise on a figure that moves with a token price.
+ * `formatCount` is the wrong tool at both ends of this range. It abbreviates
+ * from a thousand, so Solana's 5,000 lamports read "5.0K" and Cardano's 90,112
+ * bytes "90.1K", losing the exact constants a developer recognises; and it
+ * rounds below one, so Near's 0.0001 NEAR per Tgas read a flat **0**.
  *
- * Sub-cent fees are the norm rather than the exception here, so there is no
- * special case for them — the whole range is written the same way, with
- * tabular numerals doing the aligning.
+ * So: significant figures under one, grouped digits up to a million where the
+ * exact number is the point, and abbreviation above it where it is not.
  */
-export function formatFeeUsd(value: number | null | undefined): string {
+export function formatMeterValue(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "—";
   }
-  if (value === 0) return "$0";
   const abs = Math.abs(value);
-
-  if (abs >= 0.01) {
-    return `$${abs.toFixed(abs >= 1 ? 2 : 3)}`;
+  if (abs === 0) return "0";
+  if (abs < 1) {
+    // Four significant figures wherever the leading zeros end, trailing zeros
+    // trimmed so "0.0001" does not become "0.00010000".
+    const decimals = Math.min(12, 4 - Math.floor(Math.log10(abs)) - 1);
+    return value.toFixed(decimals).replace(/\.?0+$/, "");
   }
-  // Two significant figures wherever the leading zeros end: one decimal past
-  // the first non-zero digit, which `1 - floor(log10)` counts. `toFixed` is
-  // what keeps it out of the exponent form `toPrecision` reaches for below
-  // 1e-7, and the trailing zero it can leave is trimmed — "$0.0050" claims a
-  // precision this figure does not have.
-  const decimals = Math.min(12, 1 - Math.floor(Math.log10(abs)));
-  return `$${abs.toFixed(decimals).replace(/0+$/, "")}`;
+  if (abs < 1e6) {
+    return value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+  }
+  return formatCount(value);
 }
 
 /** A gas price and the unit it is quoted in. */

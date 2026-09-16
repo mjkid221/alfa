@@ -780,22 +780,23 @@ export function DeveloperSources({
 
   const sources = [
     {
-      what: "Gas price",
+      what: "Gas price, from an EVM node",
       where: "The chain's own node, via public RPC",
       covered: coverage?.gas ?? null,
-      note: "Read live and cached for a minute. Chains with no reachable public node show nothing.",
+      note: "Read live and cached for a minute. Chains with no reachable public node show nothing; the row above covers the ones that meter execution some other way.",
     },
     {
-      what: "Cost of one transfer",
-      where: "Each chain's own minimum fee, priced in the token it is paid in",
-      covered: coverage?.transferCostUsd ?? null,
-      note: "The one cost figure that is comparable across machines — gwei is not. Exact on every chain but Bitcoin and Cardano, where a transaction size is stated. Absent where fees are free inside an allowance (Tron) or set per validator (Cosmos).",
+      what: "Execution price",
+      where: "Each chain's own metering — gas, compute units, virtual bytes",
+      covered: coverage?.executionPrice ?? null,
+      note: "Not an EVM-only idea: every chain charges for work and most cap how much fits in a block, they just count different things. Each figure carries its own unit rather than being forced into gwei, which would mean nothing on Solana.",
     },
     {
-      what: "Block gas limit and fullness",
-      where: "The same block the gas price came from",
-      covered: coverage?.gasLimit ?? null,
-      note: "Fewer than answer at all: six chains report a sentinel instead of a ceiling, because Arbitrum Nitro and the zkSync stack do not bound a block the way mainnet does. Those read \u201cno cap\u201d rather than a blank.",
+      what: "Block limit",
+      where:
+        "The chain's consensus parameters, or the block the price came from",
+      covered: coverage?.executionLimit ?? null,
+      note: "Six EVM chains report a sentinel instead of a ceiling, because Arbitrum Nitro and the zkSync stack do not bound a block the way mainnet does; those read \u201cno cap\u201d rather than a blank. Tron caps energy over a day rather than a block, so it is left out of this count.",
     },
     {
       what: "Contract size limit",

@@ -258,17 +258,20 @@ export const GLOSSARY = {
   },
 
   gasPrice: {
-    title: "Gas price",
+    title: "Execution price",
     short:
-      "What one unit of computation currently costs on the chain, read from a node on that chain.",
-    long: "This is the live number on this screen — it moves by the second, where most figures here move by the day. It is read directly from a node rather than an aggregator, because no aggregator publishes it.\n\nComparing it across chains needs care: a gwei is a billionth of the chain's own token, so a low gas price on an expensive token is not automatically cheap. Read it against the block gas limit for how much room there is, and against the token's price for what it actually costs.\n\nAbout 42 of the 85 chains answer a public node. The rest are either not EVM or publish no reachable endpoint, and show nothing rather than a guess.\n\nThe unit changes with the figure, because the figures span **eleven orders of magnitude**: Gnosis Chain quotes 9 wei where Hedera quotes 1,110 gwei. One unit for all of them would mean either scientific notation or a column of leading zeros, so each row is quoted in whichever of wei and gwei keeps it short, and says which.",
+      "What one unit of execution costs here — in whatever the chain counts.",
+    long: "Every chain charges for work and most cap how much fits in a block; they just count different things. Ethereum counts **gas**, Solana **compute units**, Bitcoin **virtual bytes**, Cardano **bytes**, Stellar **operations**, Tron **energy**. So this column is not EVM-only, and each figure carries its own unit rather than being forced into gwei — which would mean nothing on Solana.\n\nEVM chains quote a gas price read live from the chain's own node, and the unit switches between wei and gwei because the universe spans eleven orders of magnitude: Gnosis Chain quotes 9 wei where Hedera quotes 1,110 gwei. Everywhere else the chain publishes a figure already readable in its own denomination — 4 sat per virtual byte, 44 lovelace per byte, 100 stroops per operation, 5,000 lamports per signature.\n\nIt is a **price, not a total**. What a whole transaction costs depends on how many units it uses, which varies by what it does.",
+    formula:
+      "The chain's own published price for one unit of whatever it meters execution in.",
   },
 
   gasLimit: {
-    title: "Block gas limit",
-    short:
-      "How much computation fits in one block, and how much of the last block was used.",
-    long: "The limit is the ceiling on a single block; the fullness figure beside it is how much of that ceiling the most recent block actually consumed. Together they say whether a chain has headroom or is running hot.\n\nSome chains have no meaningful limit and report a placeholder instead — Arbitrum returns 2^50, which is a sentinel rather than a ceiling. Those are shown blank, because printing 1.1 quadrillion gas would be worse than printing nothing.",
+    title: "Block limit",
+    short: "How much execution fits in one block, in the chain's own unit.",
+    long: "The ceiling on how much work a single block can carry — the thing that decides how much the chain can do per unit of time, and the reason a busy chain gets expensive rather than simply slower.\n\nRead from each chain in its own terms: an EVM chain's block gas limit from the block itself, a Cosmos chain's `max_gas` from its consensus parameters, Near's gas limit per shard, Cardano's maximum block size in bytes, Stellar's transactions per ledger, Bitcoin's million virtual bytes.\n\nTwo cases are not blanks and should not be read as one. **Six EVM chains report a sentinel** — Arbitrum, zkSync Era, Abstract, Etherlink, Reya and Robinhood Chain, which is Arbitrum Nitro and the zkSync stack — because neither bounds a block the way mainnet does; those read \"no cap\". And Solana's 48,000,000 compute units is a **validator constant rather than a reading**, marked with an asterisk: eight recent blocks ran 16.2M to 35.5M, so the figure is consistent with what the chain does, but the chain does not serve it.\n\nTron is absent because its energy ceiling is a daily network allowance rather than a per-block one, and quoting it here would compare two different things.",
+    formula:
+      "The chain's own per-block ceiling, in the unit it meters execution in.",
   },
 
   contractSize: {
@@ -292,15 +295,6 @@ export const GLOSSARY = {
     long: "Counted by Electric Capital, who maintain the mapping from ecosystem to repositories. That mapping is the whole point: counting commits against a chain's advertised GitHub org gets the largest chains badly wrong, because orgs move — Polygon's last pushed in January 2026 and Solana's in March 2025, so both would read as abandoned.\n\nThe figure splits into developers who work only on this chain and those who also work elsewhere, which is the difference between a resident community and passing traffic.\n\nCovers 45 of the 85 chains; the rest are too new or too small to be tracked as ecosystems.",
     example:
       "Ethereum 7,457 · Solana 2,321 · Base 1,176 · Monad 175, as of September 2026.",
-  },
-
-  transferCost: {
-    title: "Transfer cost",
-    short:
-      "What it costs to move the native token once, in dollars — the one cost figure that means the same thing on every chain.",
-    long: "Gas price does not travel. Gwei is an Ethereum accounting unit: Solana charges per signature, Bitcoin per virtual byte, Ripple a flat count of drops, and Hedera publishes its fee schedule in US cents. Even between two EVM chains the number says nothing about cost until it is multiplied by gas and by a token price — 9 wei on Gnosis Chain against 1,110 gwei on Hedera is not a comparison.\n\n**So this is the comparable number instead: one simple transfer of the chain's own token, priced.** Most of it is exact. On an EVM chain a value transfer costs 21,000 gas by the specification, so the figure is that times the gas price read from the chain. Ripple, Stellar, Algorand and MultiversX each publish a flat minimum. Near's transfer cost is a protocol parameter. Solana's is 5,000 lamports for the one signature a transfer carries.\n\nTwo chains need a transaction size, and those carry an asterisk: Bitcoin is quoted for a 141-byte one-input two-output native segwit spend at the current half-hour rate, and Cardano for a 280-byte payment against the epoch's live fee coefficients.\n\n**It is priced in the token gas is actually paid in**, which is not always the chain's own — every ETH-settled rollup charges in ETH while its governance token trades separately. Pricing Arbitrum's gas in ARB read $0.00000007 against a true $0.001.\n\nAbsent for Tron, whose transfers are free inside a daily bandwidth allowance; for Cosmos chains, where the minimum gas price is a validator's choice rather than the chain's; and for Aptos, Sui, Tezos, TON and Stacks, which publish no protocol minimum to quote.",
-    formula:
-      "The chain's minimum fee for one native transfer, multiplied by the price of the token that fee is paid in.",
   },
 
   nakamoto: {

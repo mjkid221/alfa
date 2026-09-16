@@ -18,12 +18,10 @@ import { Explain } from "~/components/ui/explain";
 import { ChainAvatar, Panel } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
-  formatCount,
-  formatFeeUsd,
   formatGasWithUnit,
   formatInteger,
+  formatMeterValue,
   formatPercent,
-  formatPrice,
 } from "~/lib/format";
 import { SkeletonPhrase } from "~/components/ui/skeleton";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
@@ -122,11 +120,11 @@ export function ChainDeveloper({
 
   if (!dev) return null;
 
-  const { gas, transferCost, developers, decentralisation, proposals } = dev;
+  const { gas, execution, developers, decentralisation, proposals } = dev;
   const hasAnything =
     dev.vm ??
     gas ??
-    transferCost ??
+    execution ??
     developers ??
     decentralisation ??
     proposals ??
@@ -187,59 +185,60 @@ export function ChainDeveloper({
         </Section>
 
         {/* --------------------------------------------------------- gas --- */}
-        {(gas ?? transferCost) && (
+        {execution && (
           <Section title="What it charges">
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-3">
-              {/* First, because it is the figure that survives leaving the EVM
-                  — a Bitcoin or Solana page has this and nothing else in the
-                  section. */}
-              {transferCost && (
+              {/*
+                The chain's own metering, whatever it counts. On an EVM chain
+                this is the gas price and the block gas limit; on Bitcoin it is
+                satoshis a virtual byte against a million of them; on Solana
+                lamports a signature against 48 million compute units.
+              */}
+              {execution.price !== null && (
                 <Figure
-                  label="One transfer"
-                  term="transferCost"
+                  label="Execution price"
+                  term="gasPrice"
                   value={
-                    transferCost.usd === null
-                      ? `${formatPrice(transferCost.native)} ${transferCost.symbol ?? ""}`.trim()
-                      : formatFeeUsd(transferCost.usd)
+                    execution.priceLabel === "gwei"
+                      ? formatGasWithUnit(execution.price)
+                      : `${formatMeterValue(execution.price)} ${execution.priceLabel}`
                   }
-                  note={`${transferCost.exact ? "" : "about "}${transferCost.basis}`}
+                  note={
+                    gas
+                      ? `read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`
+                      : execution.source
+                  }
                 />
               )}
-              {/* Everything below is an EVM reading. A Bitcoin or Solana page
-                  shows the transfer cost above and stops there, rather than
-                  printing three dashes under EVM labels. */}
-              {gas && (
-                <>
+              {execution.blockLimit !== null ? (
+                <Figure
+                  label="Block limit"
+                  term="gasLimit"
+                  value={`${formatMeterValue(execution.blockLimit)} ${execution.limitLabel}`}
+                  note={
+                    execution.limitAssumed
+                      ? "a protocol constant, not a live reading"
+                      : undefined
+                  }
+                />
+              ) : (
+                execution.limitUncapped && (
                   <Figure
-                    label="Gas price"
-                    term="gasPrice"
-                    value={formatGasWithUnit(gas.gasPriceGwei)}
-                    note={`read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`}
-                  />
-                  <Figure
-                    label="Block gas limit"
+                    label="Block limit"
                     term="gasLimit"
-                    value={
-                      gas.gasLimit
-                        ? formatCount(gas.gasLimit)
-                        : gas.limitIsSentinel
-                          ? "No cap"
-                          : "—"
-                    }
-                    note={
-                      gas.limitIsSentinel
-                        ? "this chain does not bound a block"
-                        : undefined
-                    }
+                    value="No cap"
+                    note="this chain does not bound a block by execution"
                   />
-                  {gas.gasUsedPct !== null && (
-                    <Figure
-                      label="Last block"
-                      value={formatPercent(gas.gasUsedPct, { signed: false })}
-                      note="of the gas limit used"
-                    />
-                  )}
-                </>
+                )
+              )}
+              {execution.usedPct !== null && (
+                <Figure
+                  label="Last block"
+                  value={formatPercent(execution.usedPct, { signed: false })}
+                  // "of the block limit used" rather than the unit's own name:
+                  // "of the Tgas per shard used" is not a sentence.
+                  note="of the block limit used"
+                />
               )}
             </div>
           </Section>
