@@ -379,6 +379,42 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   in the file's docblock.
 - `developerreport.com` and `nakaflow.io` are **undocumented page payloads**, not
   published APIs. First thing to check if a developer panel goes blank.
+- **Zero shuffle is reached two ways, and reserving space is the weaker one.**
+  Measured across 24 page/width/mode combinations, document height from first
+  paint to settled is now 0 everywhere. Where a panel's shape is knowable —
+  charts, fixed-length lists, panel chrome — reserve it. Where it depends on
+  data that has not arrived, **fetch the data instead**: an unlock schedule is
+  108px with no document, ~800px with one and ~1,200px with future cliffs, and
+  no reservation can be right for all three. `chain/[slug]/page.tsx` warms
+  tokenomics, news and the node map behind `deadline()`, and `page.tsx` warms
+  the developer dataset and the default globe. Losing the race costs nothing:
+  the fetch continues into the cache, the query dehydrates as pending, and the
+  skeleton behaves exactly as before.
+- **A Server Component importing a constant from a `"use client"` module gets a
+  client reference, not the value.** `DEFAULT_GLOBE_CHAIN` lived beside the
+  panel that used it; the prefetch built from it silently fetched nothing while
+  the log still showed the procedure running and the dehydrated payload simply
+  had no such key. It lives in `lib/globe-chains.ts` now. Check the dehydrated
+  keys in the HTML when a prefetch appears to run and does not land.
+- **`SkeletonPhrase` reserves text by laying the text out, not by sizing a bar.**
+  A row of 11.5px text is 17.25px because of its line-height, and a `h-3` bar
+  guessing at it is 5.25px short every row — 72px over the seven rows of the
+  virtual-machine panel. Worse, a bar cannot rewrap, so a reservation exact at
+  1440px is wrong at 390. Pass the real sentence and the placeholder inherits
+  the type scale, wraps at the same widths, and looks like a paragraph.
+- **Mirror the real markup, do not approximate it.** Every skeleton that was
+  hand-sized was wrong by 30–70px and wrong again at another width. The
+  developer hero's tile was 54px short until it used the settled tile's own
+  structure, and 2px short after that because the skeleton chip had no border
+  where the real one has `border`.
+- **A chart's reserved space belongs in the chart's own slot.** A `minHeight` on
+  the wrapper was 29px short on the alpha map, because the legend below the plot
+  renders unconditionally and so the wrapper's real height is plot *plus*
+  legend. An element standing in for the SVG cannot make that mistake.
+- **Where a panel varies with data that is known synchronously, use it.** Only
+  Monad has a live proposer readout, and that is knowable the moment the chain
+  is chosen — but the block number is two seconds of polling away, and waiting
+  for it grew the globe panel by 74px at phone and tablet widths.
 - **The globe panel's height is pinned, because the rail used to set it.**
   Measured at 1440px: 570px on Bitcoin, 659px on eight chains, 851px on Monad —
   a 281px swing that moved everything below it every time the reader changed

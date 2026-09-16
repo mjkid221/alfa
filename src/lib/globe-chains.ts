@@ -29,3 +29,14 @@ export const GLOBE_CHAINS = [
 ] as const;
 
 export type GlobeChain = (typeof GLOBE_CHAINS)[number];
+
+/**
+ * The chain the home page's globe opens on, and the one the server prefetches.
+ *
+ * Here rather than beside the panel that uses it, because the panel is a
+ * `"use client"` module and a Server Component importing a constant across
+ * that boundary gets a client reference rather than the string — which failed
+ * silently, leaving the prefetch it was meant to drive to fetch nothing at all
+ * while the log still showed the procedure running.
+ */
+export const DEFAULT_GLOBE_CHAIN: GlobeChain = "Bitcoin";

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { Explain } from "~/components/ui/explain";
-import { Skeleton } from "~/components/ui/skeleton";
+import { Skeleton, SkeletonPhrase } from "~/components/ui/skeleton";
 import { ChainAvatar } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
@@ -186,24 +186,57 @@ function LeaderCard({
         <Chip label={category.label} term={category.term} />
         {loading ? (
           /*
-           * Shaped like the tile it stands in for, not a sentence.
+           * The settled tile's own markup, with the text painted over.
            *
            * These three tiles are the developer hero, and the hero stretches to
            * whatever the rail beside it needs — so a tile holding one line of
-           * text while the dataset loaded left the whole panel 140px short
-           * (825px against 965px) and then pushed the table down when the
-           * figures arrived. Chain name, figure, runner-up: the same three
-           * rows the settled tile has.
+           * text while the dataset loaded left the whole panel 140px short and
+           * then pushed the table down when the figures arrived. A first pass
+           * of hand-sized bars got it to 172px against a real 226px; only
+           * mirroring the structure closes the last 54px, because the figure's
+           * `clamp(28px,2.2vw,36px)` and the call-to-action pinned to the
+           * bottom are not heights anyone can guess.
            */
-          <div className="mt-2.5 space-y-2.5" aria-hidden>
-            <div className="flex items-center gap-2.5">
+          <>
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
               <Skeleton className="size-[22px] shrink-0 rounded-full" />
-              <Skeleton className="h-4 w-28" />
+              <SkeletonPhrase className="text-display text-[17px] leading-none">
+                Ethereum
+              </SkeletonPhrase>
+              {/* The border counts: the real chip is `border px-1.5 py-0.5`,
+                  and leaving it off made the skeleton 2px short. */}
+              <SkeletonPhrase className="border-hairline rounded-full border px-1.5 py-0.5 text-[10px] tracking-wide uppercase">
+                EVM
+              </SkeletonPhrase>
             </div>
-            <Skeleton className="h-8 w-36" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-4/5" />
-          </div>
+
+            <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
+              <SkeletonPhrase className="text-figure inline-block text-[clamp(28px,2.2vw,36px)] leading-[0.9]">
+                0.000
+              </SkeletonPhrase>
+              <SkeletonPhrase className="text-display text-[13px] leading-tight">
+                units
+              </SkeletonPhrase>
+            </p>
+
+            <p className="mt-1 text-[11.5px] leading-snug">
+              <SkeletonPhrase className="text-[11.5px] leading-snug">
+                then a runner-up at some figure
+              </SkeletonPhrase>
+            </p>
+
+            <p className="mt-2 text-[11px] leading-snug">
+              <SkeletonPhrase className="text-[11px] leading-snug">
+                {category.note(0, 85)}
+              </SkeletonPhrase>
+            </p>
+
+            <div className="border-hairline mt-auto flex items-center justify-end border-t pt-3 sm:mt-4">
+              <SkeletonPhrase className="border-hairline rounded-control border px-2.5 py-1.5 text-[11.5px] font-medium">
+                Full breakdown
+              </SkeletonPhrase>
+            </div>
+          </>
         ) : (
           <p className="text-ink-muted mt-3 text-[13px] leading-relaxed">
             No chain reported this figure.

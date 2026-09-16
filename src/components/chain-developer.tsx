@@ -25,6 +25,7 @@ import {
   formatPercent,
   formatPrice,
 } from "~/lib/format";
+import { SkeletonPhrase } from "~/components/ui/skeleton";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { api } from "~/trpc/react";
 
@@ -459,6 +460,8 @@ export function ChainDeveloperView({
 }) {
   const hasGlobe = (GLOBE_CHAINS as readonly string[]).includes(name);
   const live = useLiveProposer(name);
+  /** Known synchronously: only Monad names a proposer that can be placed. */
+  const hasLiveProposer = name === "Monad";
   const map = api.developer.nodeMap.useQuery(
     { chain: name },
     { staleTime: 600_000, enabled: hasGlobe },
@@ -551,18 +554,37 @@ export function ChainDeveloperView({
                       ))}
                     </ul>
                   )}
-                  {live.block !== null && (
+                  {/*
+                    Reserved from the moment the chain is known to have a live
+                    readout — which is synchronous, since only Monad does —
+                    rather than from the moment a block arrives two seconds
+                    later. Waiting grew this panel by 74px at phone and tablet
+                    widths.
+                  */}
+                  {hasLiveProposer && (
                     <div className="border-hairline border-t pt-2.5">
                       <p className="text-ink-muted text-[10.5px] tracking-wide uppercase">
                         Live
                       </p>
                       <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
-                        Block {formatInteger(live.block)}
+                        {live.block === null ? (
+                          <SkeletonPhrase className="text-[12px]">
+                            Block 000,000,000
+                          </SkeletonPhrase>
+                        ) : (
+                          `Block ${formatInteger(live.block)}`
+                        )}
                       </p>
                       <p className="text-ink-faint text-[11px] leading-snug">
-                        {live.place
-                          ? `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
-                          : "proposer not registered under a published address"}
+                        {live.block === null ? (
+                          <SkeletonPhrase className="text-[11px] leading-snug">
+                            proposer not registered under a published address
+                          </SkeletonPhrase>
+                        ) : live.place ? (
+                          `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
+                        ) : (
+                          "proposer not registered under a published address"
+                        )}
                       </p>
                     </div>
                   )}

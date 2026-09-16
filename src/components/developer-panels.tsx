@@ -6,10 +6,10 @@ import { NodeGlobe } from "~/components/chart/node-globe";
 import { Explain } from "~/components/ui/explain";
 import { Panel } from "~/components/ui/primitives";
 import { Segmented } from "~/components/ui/segmented";
-import { Skeleton, SkeletonPanel } from "~/components/ui/skeleton";
+import { SkeletonPhrase } from "~/components/ui/skeleton";
 import { cn } from "~/lib/cn";
 import { formatCount, formatInteger } from "~/lib/format";
-import { GLOBE_CHAINS } from "~/lib/globe-chains";
+import { DEFAULT_GLOBE_CHAIN, GLOBE_CHAINS } from "~/lib/globe-chains";
 import { sequentialStep } from "~/lib/palette";
 import { api } from "~/trpc/react";
 import type {
@@ -110,7 +110,7 @@ export const GLOBE_HEIGHT = 460;
  * of it.
  */
 export function NodeGlobePanel({ className }: { className?: string }) {
-  const [chain, setChain] = useState<string>("Bitcoin");
+  const [chain, setChain] = useState<string>(DEFAULT_GLOBE_CHAIN);
   const [highlight, setHighlight] = useState<string | null>(null);
   /**
    * What the globe is turned to, if anything. One piece of state for both
@@ -359,6 +359,20 @@ export function NodeGlobePanel({ className }: { className?: string }) {
       <div className="border-hairline mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t pt-2.5">
         {data ? (
           <>
+            {/*
+              Monad's live readout takes its space from the moment the chain is
+              selected, not from the moment a block arrives. Whether there *is*
+              a readout is known synchronously — only Monad has one — while the
+              block number is two seconds of polling away, and waiting for it
+              grew the panel by 74px at 390px where the footer wraps.
+            */}
+            {chain === "Monad" && live.block === null && (
+              <p className="text-[11px]">
+                <SkeletonPhrase className="text-[11px]">
+                  LIVE Block 000,000,000 · reading the chain
+                </SkeletonPhrase>
+              </p>
+            )}
             {live.block !== null && (
               <p className="text-ink-secondary text-[11px]">
                 <span className="text-ink-faint mr-1.5 tracking-wide uppercase">
@@ -429,13 +443,73 @@ export function GlobeSkeleton() {
         />
         <Placing />
       </div>
+      {/*
+        The rail's own markup, painted over.
+        
+        Three fixed-height bars were right at 1440px and 309px too tall at 390,
+        where this column is no longer 190px wide and the real rows stop
+        wrapping. Mirroring the structure is the only version that is correct at
+        both: six country rows and four host rows because that is what the panel
+        slices to, and every line carrying the type scale it stands in for.
+      */}
       <div className="space-y-3" aria-hidden>
-        {/* Measured against the real rail — 60px for the total, 183 for six
-            countries, 165 for four hosts and the concentration line — so the
-            bars are replaced in place rather than resized. */}
-        <div className="bg-raised/50 h-[60px] rounded-[4px] motion-safe:animate-pulse" />
-        <div className="bg-raised/50 h-[183px] rounded-[4px] motion-safe:animate-pulse" />
-        <div className="bg-raised/50 h-[165px] rounded-[4px] motion-safe:animate-pulse" />
+        <div>
+          <SkeletonPhrase className="text-[10.5px] tracking-wide uppercase">
+            validators
+          </SkeletonPhrase>
+          <p className="mt-0.5">
+            <SkeletonPhrase className="w-20 text-[18px] font-medium" />
+          </p>
+          <p className="text-[11px] leading-snug">
+            <SkeletonPhrase className="text-[11px] leading-snug">
+              across 100 locations
+            </SkeletonPhrase>
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[10.5px] tracking-wide uppercase">
+            <SkeletonPhrase className="text-[10.5px] tracking-wide uppercase">
+              Largest countries
+            </SkeletonPhrase>
+          </p>
+          <ul className="space-y-0.5">
+            {Array.from({ length: 6 }, (_, index) => (
+              <li
+                key={index}
+                className="flex items-center gap-2 px-1.5 py-1 text-[11.5px]"
+              >
+                <span className="bg-raised size-2 shrink-0 rounded-[2px]" />
+                <SkeletonPhrase className="w-24 text-[11.5px]" />
+                <SkeletonPhrase className="ml-auto w-6 text-[11.5px]" />
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[10.5px] tracking-wide uppercase">
+            <SkeletonPhrase className="text-[10.5px] tracking-wide uppercase">
+              Largest hosts
+            </SkeletonPhrase>
+          </p>
+          <ul className="space-y-0.5">
+            {Array.from({ length: 4 }, (_, index) => (
+              <li
+                key={index}
+                className="flex items-baseline gap-2 px-1.5 py-1 text-[11.5px]"
+              >
+                <SkeletonPhrase className="w-28 text-[11.5px]" />
+                <SkeletonPhrase className="ml-auto w-6 text-[11.5px]" />
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 px-1.5 text-[11px] leading-snug">
+            <SkeletonPhrase className="text-[11px] leading-snug">
+              20% of placed validators sit with one provider.
+            </SkeletonPhrase>
+          </p>
+        </div>
       </div>
     </>
   );
@@ -539,20 +613,24 @@ export function DeveloperRail({
       </Panel>
 
       {/*
-        Seven rows reserved while the dataset loads. Empty, this panel is 154px
-        and full it is 322px, and it sits in the rail that the hero beside it
-        stretches to match — so the 168px it used to gain pulled the headline
-        panel down with it. Seven is the number of machine families the universe
-        actually has, so the reservation lands on the answer rather than near it.
+        Seven rows reserved while the dataset loads — seven being the number of
+        machine families the universe has, so the reservation lands on the
+        answer rather than near it. This panel sits in the rail the hero beside
+        it stretches to match, so anything it gains pulls the headline panel
+        down with it.
+
+        The rows mirror the real markup rather than approximating it: a bar
+        sized by hand was 17.25px of line-height short on every row, which came
+        to 72px over seven.
       */}
       <Panel title="Virtual machines" bodyClassName="px-5 py-4">
         {families.length === 0 ? (
           <ul className="space-y-2" aria-hidden>
             {Array.from({ length: 7 }, (_, index) => (
               <li key={index} className="flex items-center gap-2.5">
-                <Skeleton className="h-3 w-[7.5rem] shrink-0" />
-                <Skeleton className="h-2.5 flex-1" />
-                <Skeleton className="h-3 w-6" />
+                <SkeletonPhrase className="w-[7.5rem] shrink-0 text-[11.5px]" />
+                <span className="bg-raised relative block h-2.5 flex-1 rounded-[2px]" />
+                <SkeletonPhrase className="w-6 text-[11.5px]" />
               </li>
             ))}
           </ul>
@@ -579,23 +657,56 @@ export function DeveloperRail({
             ))}
           </ul>
         )}
-        <p className="text-ink-faint mt-3 text-[11px] leading-relaxed">
-          {withGas > 0
-            ? `${withGas} chains answered a node directly, which is how most of these were established rather than assumed.`
-            : "Reading each chain's own node…"}
-        </p>
+        {/* The same sentence either way, so it wraps to the same number of
+            lines and the panel does not resize when the count arrives. */}
+        {withGas > 0 ? (
+          <p className="text-ink-faint mt-3 text-[11px] leading-relaxed">
+            {withGas} chains answered a node directly, which is how most of
+            these were established rather than assumed.
+          </p>
+        ) : (
+          <p className="mt-3 text-[11px] leading-relaxed">
+            <SkeletonPhrase className="text-[11px]">
+              42 chains answered a node directly, which is how most of these
+              were established rather than assumed.
+            </SkeletonPhrase>
+          </p>
+        )}
       </Panel>
 
-      {topStacks.length > 0 && (
+      {/*
+        Rendered from the moment the rail is, not from the moment the stacks
+        are counted. There are always five — the universe has more than five
+        rollup stacks — so waiting only meant a 202px panel appearing from
+        nothing several seconds into the page and pushing the globe down.
+      */}
+      {(rows.length === 0 || topStacks.length > 0) && (
         <Panel title="Built on" bodyClassName="px-5 py-4">
           <ul className="space-y-1.5">
-            {topStacks.map((row) => (
+            {(topStacks.length > 0
+              ? topStacks
+              : Array.from({ length: 5 }, (_, index) => ({
+                  stack: `placeholder-${index}`,
+                  count: null as number | null,
+                }))
+            ).map((row) => (
               <li
                 key={row.stack}
                 className="flex items-baseline gap-2 text-[12px]"
               >
-                <span className="text-ink-secondary">{row.stack}</span>
-                <span className="tnum text-ink-faint ml-auto">{row.count}</span>
+                {row.count === null ? (
+                  <>
+                    <SkeletonPhrase className="w-20 text-[12px]" />
+                    <SkeletonPhrase className="ml-auto w-4 text-[12px]" />
+                  </>
+                ) : (
+                  <>
+                    <span className="text-ink-secondary">{row.stack}</span>
+                    <span className="tnum text-ink-faint ml-auto">
+                      {row.count}
+                    </span>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -652,95 +763,74 @@ export function DeveloperSources({
   className?: string;
 }) {
   /*
-   * The shell first, the counts after.
+   * The rows are static; only the counts have to wait.
    *
    * Returning null here was the single largest movement left on the home
-   * screen: this panel is 686px settled and it rendered nothing at all until
-   * the developer dataset landed, so the page grew by 686px several seconds in
-   * — measured at 6,604px → 7,430px. The rows are known ahead of the counts,
-   * which are the only part that has to wait, so only the counts are reserved.
+   * screen — this panel is 773px settled and rendered nothing at all until the
+   * dataset landed. The first fix put a skeleton of grey bars in its place,
+   * which was 71px short because the real rows are 54px or 73.5px depending on
+   * whether their note wraps to a second line, and no stack of identical bars
+   * matches that at every width.
+   *
+   * So the panel renders its real text either way and paints over the one cell
+   * that is genuinely unknown. That is exact by construction rather than by
+   * measurement, and it stays exact when the copy changes.
    */
-  if (!coverage) {
-    return (
-      <SkeletonPanel
-        title="Where these numbers come from"
-        subtitle="Coverage varies a great deal between them, so each row states its own."
-        minHeight={590}
-        className={className}
-      >
-        <ul className="space-y-3.5">
-          {Array.from({ length: 9 }, (_, index) => (
-            <li
-              key={index}
-              className="border-hairline grid gap-x-4 gap-y-1 border-b pb-3.5 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_5.5rem]"
-            >
-              <Skeleton className="h-3.5 w-40" />
-              <div className="space-y-1.5">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-3/4" />
-              </div>
-              <Skeleton className="h-3 w-14 sm:ml-auto" />
-            </li>
-          ))}
-        </ul>
-      </SkeletonPanel>
-    );
-  }
-  const universe = coverage.universe;
+  const universe = coverage?.universe ?? null;
 
   const sources = [
     {
       what: "Gas price",
       where: "The chain's own node, via public RPC",
-      covered: coverage.gas,
+      covered: coverage?.gas ?? null,
       note: "Read live and cached for a minute. Chains with no reachable public node show nothing.",
     },
     {
       what: "Cost of one transfer",
       where: "Each chain's own minimum fee, priced in the token it is paid in",
-      covered: coverage.transferCostUsd,
+      covered: coverage?.transferCostUsd ?? null,
       note: "The one cost figure that is comparable across machines — gwei is not. Exact on every chain but Bitcoin and Cardano, where a transaction size is stated. Absent where fees are free inside an allowance (Tron) or set per validator (Cosmos).",
     },
     {
       what: "Block gas limit and fullness",
       where: "The same block the gas price came from",
-      covered: coverage.gasLimit,
+      covered: coverage?.gasLimit ?? null,
       note: "Fewer than answer at all: six chains report a sentinel instead of a ceiling, because Arbitrum Nitro and the zkSync stack do not bound a block the way mainnet does. Those read \u201cno cap\u201d rather than a blank.",
     },
     {
       what: "Contract size limit",
       where: "Measured against each chain, by asking it to size a deployment",
-      covered: coverage.contractSize,
-      note: `No RPC method returns it, so it is measured: six bytes of initcode that deploy an N-byte contract, binary-searched through eth_estimateGas until the chain refuses. ${coverage.contractSizeMeasured} of the ${coverage.contractSize} answered${measuredAt ? ` when swept on ${measuredAt}` : ""}; the rest refused the probe and fall back to EIP-170, marked as assumed. It is a protocol constant, so it moves only at a hard fork.`,
+      covered: coverage?.contractSize ?? null,
+      note: `No RPC method returns it, so it is measured: six bytes of initcode that deploy an N-byte contract, binary-searched through eth_estimateGas until the chain refuses. ${coverage?.contractSizeMeasured ?? 39} of the ${coverage?.contractSize ?? 48} answered${measuredAt ? ` when swept on ${measuredAt}` : ""}; the rest refused the probe and fall back to EIP-170, marked as assumed. It is a protocol constant, so it moves only at a hard fork.`,
     },
     {
       what: "Virtual machine and rollup stack",
       where: "L2Beat, or proven by the chain answering an Ethereum RPC",
-      covered: coverage.vm,
+      covered: coverage?.vm ?? null,
       note: "Only six chains, all very new, could not be established either way.",
     },
     {
       what: "Rollup stage",
       where: "L2Beat",
-      covered: coverage.stage,
+      covered: coverage?.stage ?? null,
       note: "Applies to rollups only. An L1 secures itself with its own validator set, which the Nakamoto coefficient measures instead.",
     },
     {
       what: "Monthly active developers",
       where: "Electric Capital",
-      covered: coverage.developers,
+      covered: coverage?.developers ?? null,
       note: "They maintain the ecosystem-to-repository mapping, which is what counting a chain's own GitHub org gets wrong.",
     },
     {
       what: "Nakamoto coefficient",
       where: "Each chain's own validator set",
-      covered: coverage.decentralisation,
+      covered: coverage?.decentralisation ?? null,
       note: "Computed here rather than collected, so one definition applies everywhere. What counts as one party varies — validators, bakers, pool operators, council nodes — and each figure carries its own.",
     },
     {
       what: "Improvement proposals",
       where: "Proposal repositories and governance forums",
-      covered: coverage.proposals,
+      covered: coverage?.proposals ?? null,
       note: "No aggregator covers this, so it is a per-chain registry — every entry verified before it shipped.",
     },
   ];
@@ -763,7 +853,15 @@ export function DeveloperSources({
               <span className="text-ink-faint block">{source.note}</span>
             </span>
             <span className="tnum text-ink-muted text-[12px] sm:text-right">
-              {source.covered} of {universe}
+              {source.covered === null || universe === null ? (
+                // The one genuinely unknown cell. Painted over at the width the
+                // real figure will take, so nothing reflows when it lands.
+                <SkeletonPhrase className="text-[12px]">
+                  42 of 85
+                </SkeletonPhrase>
+              ) : (
+                `${source.covered} of ${universe}`
+              )}
             </span>
           </li>
         ))}

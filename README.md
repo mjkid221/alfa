@@ -703,6 +703,18 @@ filter to a non-EVM family drops the EVM block altogether, rather than spending
 four columns telling a reader who has just asked for Cosmos chains what they
 already know.
 
+**Nothing on the page moves while it loads.** Measured across 24 combinations
+of page, mode and screen width, the document is the same height at first paint
+as it is once every request has settled. Panels whose shape is knowable reserve
+it — and the placeholders do it by laying out the real text rather than stacking
+grey bars, which is the only version that is still correct when the text rewraps
+on a phone. Panels whose shape depends on data that has not arrived are not
+guessed at: an unlock schedule is 108px for a chain with no document, about
+800px with one and about 1,200px where there are cliffs ahead, so the page
+fetches it before rendering rather than reserving a height that is wrong two
+times in three. Those fetches are capped, and a cold one simply falls back to
+the placeholder it would have shown anyway.
+
 **The globe panel no longer moves when you change chain.** Its height used to
 be set by whichever was taller, the globe or the list beside it, and the list
 varies: 570px on Bitcoin, 659px on eight chains, 851px on Monad, with everything

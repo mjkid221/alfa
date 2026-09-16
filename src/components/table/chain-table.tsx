@@ -1204,13 +1204,21 @@ const scoreText = (value: number | null) =>
 /**
  * The same applicability rule as the table, on a phone.
  *
- * A card has no column headers to group, so the distinction has to live in the
- * value: "n/a" where the chain has no such concept, "—" where a reading is
- * missing. The four EVM-only stats are dropped from a non-EVM card outright —
- * on 390px there is no width to spend restating what the VM stat already says.
+ * A card has no column headers to group, so the distinction lives in the value:
+ * "n/a" where the chain has no such concept, "—" where a reading is missing.
+ *
+ * **Every card carries all seven, and that is deliberate.** Dropping the
+ * EVM-only four from non-EVM cards read better and moved the page: until the
+ * developer dataset arrives no row knows whether it is EVM, so every card
+ * started at three stats and the 42 EVM ones then grew — 808px of the list
+ * shifting under the reader at 390px. A constant slot count is worth more than
+ * four saved rows, and it matches what the desktop table does in the same
+ * situation.
  */
 function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
   const evm = isEvmRow(dev ?? null);
+  /** "n/a" once we know it does not apply; "—" while we do not know yet. */
+  const evmValue = (value: string) => (dev ? (evm ? value : "n/a") : "—");
   return (
     <>
       <MobileStat label="VM" value={dev?.vm ?? "—"} />
@@ -1235,43 +1243,38 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
             : "—"
         }
       />
-      {evm && (
-        <>
-          <MobileStat
-            label="Gas price"
-            value={formatGasWithUnit(dev?.gas?.gasPriceGwei)}
-          />
-          <MobileStat
-            label="Block limit"
-            value={
-              dev?.gas?.gasLimit
-                ? formatCount(dev.gas.gasLimit)
-                : dev?.gas?.limitIsSentinel
-                  ? "No cap"
-                  : "—"
-            }
-          />
-          <MobileStat
-            label="Contract limit"
-            value={
-              dev?.contractSizeLimit
-                ? `${formatInteger(dev.contractSizeLimit)} B`
-                : "—"
-            }
-          />
-          <MobileStat
-            label="Block full"
-            value={
-              dev?.gas?.gasUsedPct === null ||
-              dev?.gas?.gasUsedPct === undefined
-                ? dev?.gas?.limitIsSentinel
-                  ? "n/a"
-                  : "—"
-                : `${dev.gas.gasUsedPct.toFixed(0)}%`
-            }
-          />
-        </>
-      )}
+      <MobileStat
+        label="Gas price"
+        value={evmValue(formatGasWithUnit(dev?.gas?.gasPriceGwei))}
+      />
+      <MobileStat
+        label="Block limit"
+        value={evmValue(
+          dev?.gas?.gasLimit
+            ? formatCount(dev.gas.gasLimit)
+            : dev?.gas?.limitIsSentinel
+              ? "No cap"
+              : "—",
+        )}
+      />
+      <MobileStat
+        label="Contract limit"
+        value={evmValue(
+          dev?.contractSizeLimit
+            ? `${formatInteger(dev.contractSizeLimit)} B`
+            : "—",
+        )}
+      />
+      <MobileStat
+        label="Block full"
+        value={evmValue(
+          dev?.gas?.gasUsedPct === null || dev?.gas?.gasUsedPct === undefined
+            ? dev?.gas?.limitIsSentinel
+              ? "n/a"
+              : "—"
+            : `${dev.gas.gasUsedPct.toFixed(0)}%`,
+        )}
+      />
     </>
   );
 }
@@ -1290,8 +1293,18 @@ function MobileStat({
       <dt className="text-ink-faint truncate text-[9.5px] tracking-wide uppercase">
         {label}
       </dt>
-      <dd className="tnum text-ink-secondary mt-0.5 flex items-baseline gap-1.5 text-[12.5px]">
-        <span className={value === "—" ? "text-ink-faint" : undefined}>
+      {/* `truncate` keeps a long value on one line; `h-5` keeps the row the
+          same height whether or not it carries a delta. Measured: the delta is
+          an `inline-flex`, so its line box is 20px against plain text's 18.75,
+          and that 1.25px on eleven cards was the last 23px of movement on the
+          phone list. */}
+      <dd className="tnum text-ink-secondary mt-0.5 flex h-5 items-baseline gap-1.5 text-[12.5px]">
+        <span
+          className={cn(
+            "truncate",
+            value === "—" ? "text-ink-faint" : undefined,
+          )}
+        >
           {value}
         </span>
         {delta !== undefined && delta !== null && (

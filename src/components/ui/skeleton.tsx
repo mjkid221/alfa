@@ -34,6 +34,45 @@ import { cn } from "~/lib/cn";
  *     best decorates it.
  */
 
+/**
+ * Reserves exactly the space a piece of text will occupy, by laying that text
+ * out and painting over it.
+ *
+ * **This is the primitive that makes zero mean zero.** A hand-sized bar cannot:
+ * a row of 11.5px text is 17.25px tall because of its line-height, and a
+ * `h-3` bar guessing at it is 5.25px short every row — which over the seven
+ * rows of the virtual-machine panel came to 72px of movement. Worse, a bar's
+ * height is fixed while real text *rewraps*, so a reservation that is exact at
+ * 1440px is wrong at 390px.
+ *
+ * Passing the real sentence solves both at once. The element inherits the type
+ * scale it is standing in for, wraps at the same widths, and the background
+ * follows the line boxes — which is also what makes a multi-line placeholder
+ * look like a paragraph rather than a rectangle.
+ *
+ * `className` must carry the same text size as the content it replaces, and
+ * `children` a string of about the same length.
+ */
+export function SkeletonPhrase({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "bg-raised/50 rounded-[3px] text-transparent select-none motion-safe:animate-pulse",
+        className,
+      )}
+    >
+      {children ?? "\u00A0"}
+    </span>
+  );
+}
+
 /** One block. `className` carries the size — there is no default height. */
 export function Skeleton({ className }: { className?: string }) {
   return (

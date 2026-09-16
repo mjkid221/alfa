@@ -35,6 +35,7 @@ import {
   Skeleton,
   SkeletonFigures,
   SkeletonPanel,
+  SkeletonPhrase,
 } from "~/components/ui/skeleton";
 import type { GlossaryTerm } from "~/lib/glossary";
 import {
@@ -816,17 +817,30 @@ export function ChainDetail({
               <SkeletonPanel
                 title={`Headlines mentioning ${chain.name}`}
                 subtitle="Searching the last two weeks…"
-                minHeight={600}
+                minHeight={0}
                 bodyClassName="p-0"
               >
-                <ul className="divide-hairline/60 divide-y">
-                  {Array.from({ length: 8 }, (_, index) => (
-                    <li key={index} className="flex gap-3 px-5 py-3">
-                      <Skeleton className="size-5 shrink-0 rounded-full" />
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <Skeleton className="h-3 w-[85%]" />
-                        <Skeleton className="h-2.5 w-24" />
-                      </div>
+                {/*
+                  Ten rows, because the panel renders `slice(0, 10)` — and each
+                  one built from the real row's markup rather than from bars, so
+                  its 62.4px comes from the same type scale and the same padding
+                  the real row uses instead of from a guess that would be wrong
+                  again at 390px.
+                */}
+                <ul>
+                  {Array.from({ length: 10 }, (_, index) => (
+                    <li key={index}>
+                      <span className="border-hairline/60 flex gap-3 border-b px-5 py-3 last:border-b-0">
+                        <Skeleton className="mt-0.5 size-5 shrink-0 rounded-[4px]" />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start text-[13px] leading-snug font-medium">
+                            <SkeletonPhrase className="w-[85%] text-[13px] leading-snug font-medium" />
+                          </span>
+                          <span className="mt-1 flex text-[11px]">
+                            <SkeletonPhrase className="w-28 text-[11px]" />
+                          </span>
+                        </span>
+                      </span>
                     </li>
                   ))}
                 </ul>
