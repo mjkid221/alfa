@@ -551,6 +551,246 @@ dark surface: lightness band, chroma floor, adjacent-pair CVD separation (worst
 
 ---
 
+## Developer mode
+
+A toggle in the header switches the screen between two questions. **Research** is
+the valuation lens the app was built as. **Developer** asks what it costs to run
+code on each chain, what it is built on, who runs it, and whether anyone is still
+building — the same 85 chains, the same visual language, a different page.
+
+It is a different page rather than different columns: the hero becomes cheapest
+gas, most developers and most decentralised; the market rail becomes a breakdown
+of virtual machines and rollup stacks; the alpha map becomes a globe of node
+locations; the preset filters, which are verdicts of the valuation model, become
+a filter by virtual machine. None of it feeds the score.
+
+| What | Where from | Covers |
+|---|---|---|
+| Execution price | Each chain's own metering — gas, compute units, virtual bytes | 54 of 85 |
+| That price in dollars | One simple transfer, in the token gas is paid in | 43 of 85 |
+| Block limit | Consensus parameters, or the block the price came from | 45 of 85 |
+| Contract size limit | Measured on EVM chains, published by the rest | 54 of 85, 39 measured |
+| Rollup stage | L2Beat | 21 of 85 |
+| Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
+| Monthly active developers | Electric Capital | 45 of 85 |
+| Nakamoto coefficient | Each chain's own validator set | 20 of 85 |
+| Improvement proposals | 32 proposal repositories, 17 governance forums | 22 of 85 |
+| Node locations | bitnodes, ChainSafe nodewatch, Stakewiz, gmonads and seven chains' own endpoints | 12 of 85 |
+
+Coverage varies enormously, so every panel states its own rather than implying
+completeness.
+
+**Three things were done the hard way on purpose.** Developer counts come from
+Electric Capital rather than GitHub, because counting a chain's advertised org
+gets the largest ecosystems badly wrong — Polygon's last pushed in January 2026
+and Solana's in March 2025, so both would read as abandoned. The Nakamoto
+coefficient is computed from each chain's validator set rather than collected
+from a tracker, because the definition varies: nakaflow.io publishes 10 for
+Solana where summing stake to a third gives 18, and a column mixing definitions
+would mean nothing. And improvement proposals are a verified per-chain registry,
+because no aggregator covers them — Boardroom and Tally both want a key.
+
+**What one party is differs between chains, and each figure says which.** The
+arithmetic is the same everywhere — sort by consensus weight, count until the
+running total passes a third — but the thing being counted is not. Most chains
+weigh staked balance per validator. Cardano's parties are pool *operators*
+rather than pools, so an exchange running twenty pools counts once, which is
+the more faithful reading of "who would have to agree". MultiversX allots a
+fixed 3,200 validator seats and weighs an identity by how many it holds, not by
+the stake behind them. Tron's are the 27 elected super representatives, the
+only accounts that produce blocks. Hedera's are council nodes, Tezos' bakers.
+
+Ethereum is the conspicuous absence. Its beacon chain has over a million
+validators, so a per-validator coefficient would be six figures and meaningless;
+the only useful unit is the operator behind them, and mapping validators to
+Lido, Coinbase or Kiln is precisely the attribution the one tracker that does it
+sells for a key. A blank is more honest than a guess. Sui's public fullnodes now
+answer "JSON-RPC has been deprecated" and THORChain's public nodes are all down,
+so both show nothing rather than a stale figure.
+
+The globe draws one point per **distinct location**, not per node: Bitcoin's
+26,500 nodes collapse to about 3,300 coordinates, because a datacentre rack is
+one place however many machines are in it. Where a source can count what sits at
+a location the mark is sized by it, by area, and the largest few carry the count
+as a number.
+
+It used to carry no basemap, on the reasoning that at that density the nodes
+draw the continents themselves. They do — if there are three thousand of them.
+Hedera has twenty, and read as dots on a wireframe with nothing to say whether a
+cluster was in Virginia or in the Atlantic. So there is now a stippled landmass
+behind them, which costs **2 KB**: Natural Earth rasterised onto a two-degree
+grid and stored as one bit per cell, rather than 55 KB of coastline vectors and
+a decoder to read them.
+
+You can turn it: drag to rotate on both axes, wheel or pinch to zoom, hover a
+mark to name the place and its hosting provider, and click a country beside it to
+swing the globe round to that country and light its nodes. The country list is
+the keyboard route to the same thing, and the globe itself takes arrow keys. It
+rotates gently until you touch it, then it is yours; `Home` gives it back. With
+reduced motion set it never moves on its own — and then it draws exactly one
+frame, where the old version redrew the same image sixty times a second.
+
+The counts are not all in the same unit, so each globe names its own: 26,500
+Bitcoin **nodes**, 196 Monad **validators**, Hedera's 25 **council nodes** — which
+is its entire consensus layer, not a sample. Eleven chains can be placed and one
+of them is a favour: Monad publishes nothing, so its validators come from two
+independent observers that happen to agree, and are labelled as a third party's
+measurement rather than the chain's own data. Aptos is the awkward one — it
+publishes hostnames rather than addresses, so they are resolved before they can
+be placed, and the 20 of 84 that cannot be read are reported rather than
+dropped.
+
+**Why twelve and not eighty-five.** It is not a coverage failure. 24 of the 85
+are L2s with a single sequencer, so there is no validator set to map — a Base
+globe would be one dot, which is better said in a sentence. Cosmos-SDK chains
+hide validators behind sentry nodes on purpose, because publishing a validator's
+IP invites exactly the attack that architecture exists to stop. And a third
+group publishes identity without location: Hyperliquid names its 35 validators
+and their stake but not where they are, and Near's 421 have no address field at
+all. Flow is the last one that could be added — its staking contract publishes a
+networking address on-chain, which a Cadence script returns for all 312 staked
+nodes at once.
+
+**Ethereum is here after being written off twice.** `nodewatch.io` is an empty
+shell, so it read as another dead crawler — but ChainSafe's crawler behind it
+still answers a keyless GraphQL query, coordinates and all: 7,137 nodes across
+1,663 locations and 1,081 named cities, updated daily. They are consensus-layer
+nodes; the execution layer is a different population, and Etherscan counts
+11,848 of those but publishes only which country each is in.
+
+Beside the globe is the breakdown that actually answers a deployment question:
+**who hosts it**. Geography across thirty countries means less than it looks if
+one company owns the hardware — Hedera's 25 council nodes sit in seven countries
+and 52% of them are at Amazon. That figure needed the provider names folding
+first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
+Inc." and "Amazon.com", which had been quietly reporting 32%.
+
+**Gas price is not an EVM idea, so the gas columns are not EVM columns.** Every
+chain charges for work and most cap how much fits in a block — they just count
+different things. Ethereum counts gas, Solana compute units, Bitcoin virtual
+bytes, Cardano bytes, Stellar operations, Tron energy. Each figure carries its
+own unit rather than being forced into gwei, which would mean nothing on Solana,
+and that takes the price column from 42 chains to **54** and the block limit
+from 36 to **45**.
+
+Quoted the way each chain quotes itself. Near's RPC answers 100,000,000
+yoctoNEAR per unit of gas against a limit of 10^15; Near's own documentation
+says 0.0001 NEAR per Tgas against 1,000 Tgas, which is the same thing and can be
+read. Bitcoin is 3 satoshis a virtual byte against the million a block holds —
+and, the day this was written, 99.8% full.
+
+Two things that are not blanks. Six EVM chains report a sentinel rather than a
+ceiling, and dYdX reports −1, which is Tendermint for "a block is bounded by
+bytes and time, not gas"; all seven read **no cap**. And Solana's 48,000,000
+compute units is a validator constant rather than something the chain serves, so
+it is marked as one — eight recent blocks ran 16.2M to 35.5M, which is
+consistent with it.
+
+**A price per unit is honest and illegible, so it carries a dollar figure.**
+160,000,000 inj per gas and 5,000 lamports per signature say nothing about
+whether a chain is expensive, so beneath each price sits what one simple
+transfer costs — $0.006 on Ethereum, $0.107 on Bitcoin, $0.0005 on Solana. It
+is priced in **the token gas is actually paid in**, which is not always the
+chain's own: an ETH-settled rollup charges in ETH while its governance token
+trades separately, and pricing Arbitrum's gas in ARB read $0.00000007 against a
+true $0.001. Where that token is not one of the 85, or where a chain's
+denomination convention would make the exponent a guess, there is no dollar
+figure rather than a wrong one — which is why the Cosmos chains show a price
+and no money.
+
+**Contract size limits now cover the non-EVM chains too.** The EVM ones are
+measured, by asking each chain to size a deployment; that trick does not travel,
+so the rest are the ceilings they publish. Near serves `max_contract_size` — 4
+MB, four hundred times what EIP-170 allows — as a protocol parameter, and
+Cardano serves `max_tx_size`, both read live. Solana's 10 MB, Stellar's 64 KB
+and Algorand's 8 KB are documented constants. Two of these cap the *transaction*
+carrying the code rather than the code itself, which bounds a deployment without
+being a code limit; those carry a dagger and say so.
+
+**The table is five columns, and the ones it lost went to the chain pages.**
+The Nakamoto coefficient can be computed for 20 of the 85 chains and a rollup
+stage exists for 21; as columns they were blank for three rows in four, which
+is a lot of table to spend on a figure most of it cannot answer. Both are still
+on every chain page that has one, along with block fullness — where a reader
+has asked about a single chain and an absent figure costs a line rather than a
+column.
+
+What remains applies almost everywhere: the machine, monthly active developers,
+the execution price, the block limit, and the contract size limit. Only the last
+is EVM-specific, and it sits under a second header row naming who each block of
+columns applies to — **Any machine**, **EVM chains only** — because a dash has
+to keep meaning "we could not read this". A column that does not apply to a
+chain renders "n/a" instead, and narrowing the machine filter to a non-EVM
+family drops the EVM block altogether.
+
+**Nothing on the page moves while it loads.** Measured across 24 combinations
+of page, mode and screen width, the document is the same height at first paint
+as it is once every request has settled. Panels whose shape is knowable reserve
+it — and the placeholders do it by laying out the real text rather than stacking
+grey bars, which is the only version that is still correct when the text rewraps
+on a phone. Panels whose shape depends on data that has not arrived are not
+guessed at: an unlock schedule is 108px for a chain with no document, about
+800px with one and about 1,200px where there are cliffs ahead, so the page
+fetches it before rendering rather than reserving a height that is wrong two
+times in three. Those fetches are capped, and a cold one simply falls back to
+the placeholder it would have shown anyway.
+
+**The globe panel no longer moves when you change chain.** Its height used to
+be set by whichever was taller, the globe or the list beside it, and the list
+varies: 570px on Bitcoin, 659px on eight chains, 851px on Monad, with everything
+below shifting each time. The globe now sets the height on its own, the list is
+capped to it, and the source line and live block readout — the two pieces that
+varied most — moved into a full-width footer that is one line on every chain.
+Switching now also *says* it is switching: the previous globe stays up, dimmed,
+under a "placing nodes" marker rather than silently standing in for a chain it
+is not.
+
+**The chain page is two pages.** Developer mode replaces it rather than adding
+to it: someone asking what it costs to deploy on a chain does not want a
+value-gap verdict above the answer, so the tier, the multiples and the peer
+scale give way to what it runs, what it charges, who runs it, what is being
+proposed — and, for the twelve chains that have one, its own globe.
+
+**Contract size limits are measured, not assumed.** There is no RPC method that
+returns one, so each chain is asked: six bytes of initcode that deploy an
+N-byte contract, binary-searched through `eth_estimateGas` until the chain
+refuses. The table this replaced held a single hand-written entry and it was
+wrong — Arbitrum enforces the same 24,576 as everyone else, while four chains
+genuinely differ: **Monad at 131,072**, Celo at 65,536, Polygon PoS and
+Berachain at 32,768. Nine chains refused the probe and fall back to EIP-170,
+reported as assumed rather than measured, because a default presented as a
+finding is how the wrong entry got there in the first place.
+
+Every chain page now carries the same engineering view of that one chain: what
+it runs, what it charges, who runs it, and what is being proposed. That last one
+is the reason it exists — a chain's open proposals are titles and links, which
+cannot be a table cell, and they were being fetched and thrown away. So are the
+five years of monthly developer counts behind each sparkline, and two thirds of
+the decentralisation reading: the Nakamoto column shows the coefficient, but not
+that Solana has 677 validators and its largest holds 4.0% of stake.
+
+**Monad's globe is live.** Every Monad block names the validator that proposed
+it, so the globe rings the place it came from as it happens, at a two-second
+poll that the server shares between every reader. Roughly a quarter of blocks
+can be placed — a block's author address is only joinable to a location when the
+validator registered that address, and most have not — so the readout beside it
+says which blocks it could place rather than letting the quiet ones imply a
+quiet network. It is the only chain where this is possible: Ethereum's `miner`
+is a fee recipient, not a located node.
+
+Click a provider and the globe draws it: great-circle arcs sweep out joining
+every location it runs, with a pulse travelling them while it stays selected.
+That is the only relationship the globe draws, and it is drawn because it is the
+only one in the data — 402 of Tron's 1,183 nodes are Amazon's, and the arcs are
+where. Other globes animate arcs to show block propagation, which is live data
+this app has no equivalent of, so it does not borrow the look for nothing.
+
+**One rule changed.** Gas needs a node, and public endpoints answer for 39 of the
+41 EVM chains but not reliably for the rest, so `ALCHEMY_API_KEY` is an optional
+fallback — tried only after public RPC, cached for 60 seconds, and making no
+calls at all while nobody is looking at developer mode. Unset, the feature
+degrades to public endpoints exactly as the app degrades without Redis.
+
 ## Limitations
 
 - Market caps are **circulating**, not fully diluted. A chain with a large unlock

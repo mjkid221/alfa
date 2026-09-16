@@ -182,7 +182,34 @@ export function AlphaMap({
   }
 
   return (
-    <div className={cn("relative", className)} ref={ref}>
+    /*
+     * The plot's space is held by a placeholder of exactly its height.
+     *
+     * The SVG renders only once `width > 0`, and width is measured in an
+     * effect — so on a server-rendered page the HTML the reader first sees has
+     * an empty box where the chart belongs, and everything below it jumps once
+     * hydration measures the container. Making `useMeasure` a layout effect
+     * fixes a client-side navigation; only reserved space fixes the first
+     * paint, because the server has no layout to measure.
+     *
+     * A `minHeight` on this wrapper was the first attempt and it was 29px
+     * short: the legend below the plot is **outside** the conditional, so it
+     * always rendered and the wrapper's real height was the plot plus the
+     * legend while only the plot was being reserved. An element standing in
+     * for the SVG cannot make that mistake — it occupies the same slot.
+     *
+     * `@container` rather than a viewport media query because the narrow
+     * switch below is on the *container's* width, and a full-width chart in a
+     * narrow column would otherwise reserve the wide height and shrink.
+     */
+    <div className={cn("@container relative", className)} ref={ref}>
+      {!(width > 0 && model) && (
+        <div
+          aria-hidden
+          className="h-[430px] @max-[480px]:h-[320px]"
+          data-testid="alpha-map-reserve"
+        />
+      )}
       {width > 0 && model && (
         <svg
           width={width}

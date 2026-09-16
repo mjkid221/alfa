@@ -274,7 +274,16 @@ export function FlowMap({
   })();
 
   return (
+    // Reserved for the same reason as the alpha map's: the diagram is hidden
+    // until the container has been measured, and on a server-rendered page
+    // that measurement happens after the reader has already seen the layout.
+    // A placeholder in the SVG's own slot rather than a `minHeight` on the
+    // wrapper, so anything else the wrapper holds is counted too. `svgHeight`
+    // does not depend on the width, so this one is exact.
     <div className={cn("relative space-y-3", className)} ref={ref}>
+      {!(width > 0 && model) && (
+        <div aria-hidden style={{ height: svgHeight }} />
+      )}
       {width > 0 && model && (
         <svg
           width={width}

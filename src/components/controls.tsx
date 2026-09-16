@@ -6,6 +6,7 @@ import { Explain } from "~/components/ui/explain";
 import { Segmented } from "~/components/ui/segmented";
 import { cn } from "~/lib/cn";
 import type { SupplyMix } from "~/lib/rebase-universe";
+import { VM_FAMILIES, type ScreenMode, type VmFilter } from "~/lib/screen-mode";
 import { BASIS_META, type CapBasis } from "~/lib/valuation-basis";
 import {
   DEFAULT_FILTERS,
@@ -23,6 +24,9 @@ export function Controls({
   onChange,
   basis,
   onBasisChange,
+  mode,
+  vm,
+  onVmChange,
   supplyMix,
   resultCount,
   totalCount,
@@ -31,6 +35,10 @@ export function Controls({
   onChange: (next: Filters) => void;
   basis: CapBasis;
   onBasisChange: (next: CapBasis) => void;
+  /** Developer mode prices nothing, so the basis control hides there. */
+  mode: ScreenMode;
+  vm: VmFilter;
+  onVmChange: (next: VmFilter) => void;
   /** Which denominator each chain used. Null while on circulating. */
   supplyMix: SupplyMix | null;
   resultCount: number;
@@ -44,29 +52,54 @@ export function Controls({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
         {/*
           First in the row because it is not a filter: the others narrow the
-          set, this one changes what every number in it means.
+          set, this one changes what every number in it means. The screen mode
+          sits higher still, in the header, because it changes the screen.
         */}
-        <Segmented
-          label="Valuation basis"
-          value={basis}
-          onChange={onBasisChange}
-          options={(["circulating", "diluted"] as CapBasis[]).map((key) => ({
-            value: key,
-            label: BASIS_META[key].short,
-            hint: BASIS_META[key].hint,
-          }))}
-        />
+        {mode === "research" && (
+          <Segmented
+            label="Valuation basis"
+            value={basis}
+            onChange={onBasisChange}
+            options={(["circulating", "diluted"] as CapBasis[]).map((key) => ({
+              value: key,
+              label: BASIS_META[key].short,
+              hint: BASIS_META[key].hint,
+            }))}
+          />
+        )}
 
-        <Segmented
-          label="Screen preset"
-          value={filters.preset}
-          onChange={(preset) => set("preset", preset)}
-          options={(Object.keys(PRESETS) as PresetKey[]).map((key) => ({
-            value: key,
-            label: PRESETS[key].label,
-            hint: PRESETS[key].description,
-          }))}
-        />
+        {/*
+          "High conviction" and "Deep value" are verdicts of the valuation
+          model, so they mean nothing to a reader asking where to deploy. In
+          developer mode the preset row becomes the one filter that does apply:
+          which machine the chain runs.
+        */}
+        {mode === "research" ? (
+          <Segmented
+            label="Screen preset"
+            value={filters.preset}
+            onChange={(preset) => set("preset", preset)}
+            options={(Object.keys(PRESETS) as PresetKey[]).map((key) => ({
+              value: key,
+              label: PRESETS[key].label,
+              hint: PRESETS[key].description,
+            }))}
+          />
+        ) : (
+          <Segmented
+            label="Virtual machine"
+            value={vm}
+            onChange={onVmChange}
+            options={VM_FAMILIES.map((key) => ({
+              value: key,
+              label: key === "any" ? "All machines" : key,
+              hint:
+                key === "any"
+                  ? "Every chain, whatever it runs."
+                  : `Only chains running ${key}.`,
+            }))}
+          />
+        )}
 
         <Segmented
           label="Chain layer"
@@ -122,21 +155,25 @@ export function Controls({
           onChange={(value) => set("onlyInvestable", value)}
         />
 
-        <Toggle
-          label="Hide value traps"
-          hint="Excludes chains that are cheap while their activity contracts."
-          checked={filters.excludeValueTraps}
-          onChange={(value) => set("excludeValueTraps", value)}
-        />
+        {mode === "research" && (
+          <Toggle
+            label="Hide value traps"
+            hint="Excludes chains that are cheap while their activity contracts."
+            checked={filters.excludeValueTraps}
+            onChange={(value) => set("excludeValueTraps", value)}
+          />
+        )}
       </div>
 
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px]">
         <span className="text-ink-muted tnum">
           Showing {resultCount} of {totalCount} chains
         </span>
-        <span className="text-ink-faint">
-          {PRESETS[filters.preset].description}
-        </span>
+        {mode === "research" && (
+          <span className="text-ink-faint">
+            {PRESETS[filters.preset].description}
+          </span>
+        )}
         {supplyMix && (
           <span className="text-ink-secondary inline-flex items-center gap-1">
             Priced on every token that will exist: maximum supply for{" "}

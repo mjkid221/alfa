@@ -13,7 +13,9 @@ import {
 import { useEffect, useId, useState } from "react";
 
 import { GitHubMark, SOCIAL, XMark } from "~/components/ui/brand-marks";
+import { Segmented } from "~/components/ui/segmented";
 import { useWindows } from "~/components/window/window-context";
+import { SCREEN_MODES, type ScreenMode } from "~/lib/screen-mode";
 
 import { cn } from "~/lib/cn";
 import { formatAge } from "~/lib/format";
@@ -31,9 +33,17 @@ const CONDENSE_AT = 24;
 export function PageHeader({
   meta,
   onOpenPalette,
+  mode,
+  onModeChange,
 }: {
   meta: AggregateMeta;
   onOpenPalette?: () => void;
+  /**
+   * The screen mode, where the page has one. The chain pages do not, so both
+   * are optional and the control simply does not render there.
+   */
+  mode?: ScreenMode;
+  onModeChange?: (next: ScreenMode) => void;
 }) {
   const condensed = useCondensed();
 
@@ -72,6 +82,25 @@ export function PageHeader({
             what a chain earns against what it costs
           </span>
         </Link>
+
+        {/*
+          The mode switch sits with the wordmark rather than down in the filter
+          row, because it is not a filter: it changes which screen you are
+          looking at. Kept compact so the phone bar stays one row.
+        */}
+        {mode && onModeChange && (
+          <Segmented
+            label="Screen mode"
+            size="compact"
+            value={mode}
+            onChange={onModeChange}
+            options={(["research", "developer"] as ScreenMode[]).map((key) => ({
+              value: key,
+              label: SCREEN_MODES[key].short,
+              hint: SCREEN_MODES[key].hint,
+            }))}
+          />
+        )}
 
         {/* On phones the bar is one row: icon-only window buttons, the source
             dots without their count, and no freshness text or shortcut hint.
@@ -156,6 +185,13 @@ function useCondensed(): boolean {
 }
 
 /**
+ * The links' natural width: a 1px divider with 6px either side, then two 28px
+ * marks. Measured rather than derived, and asserted in the same breath — if the
+ * marks ever change size this number is the thing that will be wrong.
+ */
+const SOCIAL_WIDTH = 69;
+
+/**
  * Where the project lives, shown only at the top of the page.
  *
  * These are the least urgent things in the bar, so they get the space only
@@ -163,11 +199,41 @@ function useCondensed(): boolean {
  * zero width and fade, which keeps the condensed header to what a reader
  * scrolling a ranking actually needs.
  *
- * Collapsed is not merely invisible: a zero-width link with `opacity: 0` still
- * takes keyboard focus, which would put the focus ring somewhere nothing is
- * drawn. They are removed from the tab order and from the accessibility tree
- * while hidden, and the footer carries the same two links for anyone who has
- * scrolled past them.
+ * ## Collapsing them without unmounting them
+ *
+ * Two earlier attempts failed, and the third was to unmount: a zero-width link
+ * with `opacity: 0` still takes keyboard focus, and collapsing the wrapper to
+ * `max-w-0` left the `shrink-0` links laid out past the viewport, adding 31px
+ * to the document's scrollable width — a horizontal scrollbar on every
+ * condensed header at `xl` and above, which `overflow: clip` did not remove
+ * either. Unmounting fixed both and cost the animation: the links appeared and
+ * vanished rather than easing.
+ *
+ * They ease now, and the two problems stay fixed by different means.
+ * **`overflow: hidden`, not `clip`** — hidden establishes a scroll container,
+ * so the overflowing links are contained by it instead of extending the
+ * document; clip only paints less. And **`inert`**, which React 19 passes
+ * through: while collapsed the links leave the tab order and the accessibility
+ * tree entirely, which is the part unmounting was really buying.
+ *
+ * **`min-w-0` is load-bearing too**, for the third time in this codebase. A flex
+ * item's automatic minimum size is its content, so `width: 0` alone left this
+ * sitting at its full 69px with the links merely clipped — the bar looked
+ * unchanged and nothing animated.
+ *
+ * **`relative` is load-bearing**, and its absence is almost certainly what sank
+ * the `max-w-0` attempt. Each link carries an `sr-only` label, and `sr-only` is
+ * `position: absolute` — so without a positioned ancestor here its containing
+ * block is a `div` far up the tree, it escapes this element's clipping
+ * entirely, and it lands 31px past the viewport. That one hidden pixel of text
+ * was the horizontal scrollbar: the document measured 1,471px inside 1,440.
+ *
+ * `width` rather than `max-width` because the animation should run over the
+ * whole distance — `max-width` spends its first frames closing a gap between
+ * the cap and the content that was never visible.
+ *
+ * Reduced motion needs nothing here: the global rule collapses every transition
+ * duration, so the links snap the way they used to.
  *
  * Hidden below `xl` regardless, and that breakpoint was measured rather than
  * guessed: at `lg` these 69px tipped the bar onto a second row from 1100 to
@@ -178,17 +244,15 @@ function useCondensed(): boolean {
 function SocialLinks({ condensed }: { condensed: boolean }) {
   return (
     <span
-      className={cn(
-        "hidden items-center overflow-hidden transition-all xl:flex",
-        condensed
-          ? "pointer-events-none max-w-0 opacity-0"
-          : "max-w-[8rem] opacity-100",
-      )}
+      className="relative hidden min-w-0 shrink-0 items-center overflow-hidden xl:flex"
       style={{
+        width: condensed ? 0 : SOCIAL_WIDTH,
+        opacity: condensed ? 0 : 1,
+        transitionProperty: "width, opacity",
         transitionDuration: "var(--dur-standard)",
-        transitionTimingFunction: "var(--ease-standard)",
+        transitionTimingFunction: "var(--ease-emphasised)",
       }}
-      aria-hidden={condensed}
+      inert={condensed}
     >
       <span className="bg-hairline mx-1.5 h-4 w-px shrink-0" aria-hidden />
       {[
@@ -202,7 +266,6 @@ function SocialLinks({ condensed }: { condensed: boolean }) {
           rel="noreferrer"
           title={title}
           aria-label={title}
-          tabIndex={condensed ? -1 : undefined}
           className="text-ink-muted hover:text-ink rounded-control inline-flex size-7 shrink-0 items-center justify-center transition-colors"
           style={{ transitionDuration: "var(--dur-micro)" }}
         >

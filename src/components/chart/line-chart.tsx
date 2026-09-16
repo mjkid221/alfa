@@ -464,7 +464,15 @@ export function LineChart({
   const hoverX = hoverIndex === null ? null : model.xAt(hoverIndex);
 
   return (
+    // Reserved before the container can be measured. The plot is hidden until
+    // `width > 0`, and on a server-rendered page that first measurement lands
+    // after the reader has already seen the layout — so without this the panel
+    // paints empty and then pushes everything below it down. A placeholder in
+    // the plot's own slot rather than a `minHeight` on the wrapper, which would
+    // miss anything else the wrapper holds. `height` is a prop and does not
+    // depend on the width, so the reservation is exact.
     <div className={cn("relative", className)} ref={ref}>
+      {width === 0 && <div aria-hidden style={{ height }} />}
       {width > 0 && (
         <svg width={width} height={height} role="img" aria-label={label}>
           <g transform={`translate(${MARGIN.left},${marginTop})`}>
