@@ -18,7 +18,7 @@ import {
 } from "~/components/developer-panels";
 import { DivisionLeaders, type Division } from "~/components/division-leaders";
 import { ModeSwap } from "~/components/mode-swap";
-import { vmFamilyOf } from "~/lib/screen-mode";
+import { vmFamilyOf, type ScreenMode } from "~/lib/screen-mode";
 import { MarketRail } from "~/components/market/market-rail";
 import { MethodologyPanel } from "~/components/methodology";
 import { SiteFooter } from "~/components/site-footer";
@@ -32,7 +32,7 @@ import type { DeveloperMetrics } from "~/server/domain/developer";
 import type { ChainSnapshot } from "~/server/domain/types";
 import { api } from "~/trpc/react";
 
-export function Screen() {
+export function Screen({ initialMode }: { initialMode: ScreenMode }) {
   // Filters live in a persisted store so the last configuration survives a
   // refresh. Rehydrated after mount, so the server-rendered defaults and the
   // first client render agree; see the store for why.
@@ -40,11 +40,18 @@ export function Screen() {
   const setFilters = useFiltersStore((state) => state.setFilters);
   const basis = useFiltersStore((state) => state.basis);
   const setBasis = useFiltersStore((state) => state.setBasis);
-  const mode = useFiltersStore((state) => state.mode);
+  const storedMode = useFiltersStore((state) => state.mode);
   const setMode = useFiltersStore((state) => state.setMode);
   const vm = useFiltersStore((state) => state.vm);
   const setVm = useFiltersStore((state) => state.setVm);
-  useRehydrateFilters();
+  /*
+   * The server rendered `initialMode` from a cookie; the store is authoritative
+   * only once it has read localStorage. Until then the cookie's answer stands,
+   * which is what stops a developer-mode reader seeing a frame of the research
+   * page — 6,929px of it before this, then 7,391px of the right one.
+   */
+  const hydrated = useRehydrateFilters();
+  const mode = hydrated ? storedMode : initialMode;
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useCommandShortcut(useCallback(() => setPaletteOpen((open) => !open), []));

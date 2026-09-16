@@ -4,6 +4,11 @@ import { ArrowUpRight } from "lucide-react";
 
 import { NodeGlobe } from "~/components/chart/node-globe";
 import {
+  Skeleton,
+  SkeletonFigures,
+  SkeletonPanel,
+} from "~/components/ui/skeleton";
+import {
   GLOBE_HEIGHT,
   GlobeSkeleton,
   useLiveProposer,
@@ -88,10 +93,27 @@ export function ChainDeveloper({
   const dev = query.data;
 
   if (query.isPending) {
+    /*
+     * 620px, measured: this panel settles at 644px on Bitcoin, 773px on Solana
+     * and 783px on Ethereum, and used to stand at 107px while the developer
+     * dataset loaded — which on a cold cache is several seconds of the page
+     * below it sitting 600px too high. The globe panel underneath is the thing
+     * that was being thrown around.
+     */
     return (
-      <Panel title="What it takes to build here" className={className}>
-        <p className="text-ink-muted text-[12.5px]">Reading the chain…</p>
-      </Panel>
+      <SkeletonPanel
+        title="What it takes to build here"
+        subtitle={`Reading ${name}…`}
+        minHeight={620}
+        className={className}
+      >
+        <div className="space-y-6">
+          <SkeletonFigures count={4} />
+          <SkeletonFigures count={3} />
+          <SkeletonFigures count={3} />
+          <Skeleton className="h-[150px] w-full" />
+        </div>
+      </SkeletonPanel>
     );
   }
 

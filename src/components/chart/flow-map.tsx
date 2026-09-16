@@ -274,7 +274,15 @@ export function FlowMap({
   })();
 
   return (
-    <div className={cn("relative space-y-3", className)} ref={ref}>
+    // Reserved for the same reason as the alpha map's: the diagram is hidden
+    // until the container has been measured, and on a server-rendered page
+    // that measurement happens after the reader has already seen the layout.
+    // `svgHeight` does not depend on the width, so this one is exact.
+    <div
+      className={cn("relative space-y-3", className)}
+      ref={ref}
+      style={{ minHeight: svgHeight }}
+    >
       {width > 0 && model && (
         <svg
           width={width}

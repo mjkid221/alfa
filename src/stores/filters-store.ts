@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
@@ -11,6 +11,7 @@ import {
   type LayerFilter,
 } from "~/components/filters";
 import { VM_FAMILIES, type ScreenMode, type VmFilter } from "~/lib/screen-mode";
+import { writeModeCookie } from "~/lib/mode-cookie";
 import type { CapBasis } from "~/lib/valuation-basis";
 
 /**
@@ -139,10 +140,28 @@ function sanitiseMode(candidate: unknown): ScreenMode {
  * the defaults forever: the mode switch in the bar said research while
  * localStorage said developer, and the page believed the wrong one.
  */
-export function useRehydrateFilters(): void {
+export function useRehydrateFilters(): boolean {
+  // False on the server and on the first client render, so both agree; true
+  // once localStorage has been read. Callers use it to decide whether to trust
+  // the store's mode or the one the server rendered from the cookie.
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
-    void useFiltersStore.persist.rehydrate();
+    const done = () => {
+      // Back-fill the cookie from what localStorage actually said. Without
+      // this, anyone who chose developer mode before the cookie existed would
+      // keep getting a research-mode first paint until they happened to toggle
+      // the switch again — the saved preference is already right, the server
+      // just has no way to see it.
+      writeModeCookie(useFiltersStore.getState().mode);
+      setHydrated(true);
+    };
+    const result = useFiltersStore.persist.rehydrate();
+    if (result instanceof Promise) void result.then(done, done);
+    else done();
   }, []);
+
+  return hydrated;
 }
 
 export const useFiltersStore = create<FiltersState>()(
@@ -159,7 +178,13 @@ export const useFiltersStore = create<FiltersState>()(
           sort: typeof next === "function" ? next(state.sort) : next,
         })),
       setBasis: (next) => set({ basis: next }),
-      setMode: (next) => set({ mode: next }),
+      setMode: (next) => {
+        // Mirrored into a cookie so the *server* can render this mode on the
+        // next page load. See `lib/mode-cookie.ts` — localStorage remains the
+        // source of truth; the cookie exists only to pick the first paint.
+        writeModeCookie(next);
+        set({ mode: next });
+      },
       setVm: (next) => set({ vm: next }),
       reset: () =>
         set({

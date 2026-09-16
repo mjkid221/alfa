@@ -6,6 +6,7 @@ import { NodeGlobe } from "~/components/chart/node-globe";
 import { Explain } from "~/components/ui/explain";
 import { Panel } from "~/components/ui/primitives";
 import { Segmented } from "~/components/ui/segmented";
+import { Skeleton, SkeletonPanel } from "~/components/ui/skeleton";
 import { cn } from "~/lib/cn";
 import { formatCount, formatInteger } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
@@ -518,31 +519,51 @@ export function DeveloperRail({
         </p>
       </Panel>
 
+      {/*
+        Seven rows reserved while the dataset loads. Empty, this panel is 154px
+        and full it is 322px, and it sits in the rail that the hero beside it
+        stretches to match — so the 168px it used to gain pulled the headline
+        panel down with it. Seven is the number of machine families the universe
+        actually has, so the reservation lands on the answer rather than near it.
+      */}
       <Panel title="Virtual machines" bodyClassName="px-5 py-4">
-        <ul className="space-y-2">
-          {families.map((family, index) => (
-            <li key={family.vm} className="flex items-center gap-2.5">
-              <span className="text-ink-secondary w-[7.5rem] shrink-0 truncate text-[11.5px]">
-                {family.vm}
-              </span>
-              <span className="bg-raised relative block h-2.5 flex-1 overflow-hidden rounded-[2px]">
-                <span
-                  className="absolute inset-y-0 left-0 rounded-[2px]"
-                  style={{
-                    width: `${(family.count / (families[0]?.count ?? 1)) * 100}%`,
-                    background: sequentialStep(index, families.length || 1),
-                  }}
-                />
-              </span>
-              <span className="tnum text-ink-faint w-6 text-right text-[11.5px]">
-                {family.count}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {families.length === 0 ? (
+          <ul className="space-y-2" aria-hidden>
+            {Array.from({ length: 7 }, (_, index) => (
+              <li key={index} className="flex items-center gap-2.5">
+                <Skeleton className="h-3 w-[7.5rem] shrink-0" />
+                <Skeleton className="h-2.5 flex-1" />
+                <Skeleton className="h-3 w-6" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ul className="space-y-2">
+            {families.map((family, index) => (
+              <li key={family.vm} className="flex items-center gap-2.5">
+                <span className="text-ink-secondary w-[7.5rem] shrink-0 truncate text-[11.5px]">
+                  {family.vm}
+                </span>
+                <span className="bg-raised relative block h-2.5 flex-1 overflow-hidden rounded-[2px]">
+                  <span
+                    className="absolute inset-y-0 left-0 rounded-[2px]"
+                    style={{
+                      width: `${(family.count / (families[0]?.count ?? 1)) * 100}%`,
+                      background: sequentialStep(index, families.length || 1),
+                    }}
+                  />
+                </span>
+                <span className="tnum text-ink-faint w-6 text-right text-[11.5px]">
+                  {family.count}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="text-ink-faint mt-3 text-[11px] leading-relaxed">
-          {withGas} chains answered a node directly, which is how most of these
-          were established rather than assumed.
+          {withGas > 0
+            ? `${withGas} chains answered a node directly, which is how most of these were established rather than assumed.`
+            : "Reading each chain's own node…"}
         </p>
       </Panel>
 
@@ -611,7 +632,41 @@ export function DeveloperSources({
   measuredAt?: string;
   className?: string;
 }) {
-  if (!coverage) return null;
+  /*
+   * The shell first, the counts after.
+   *
+   * Returning null here was the single largest movement left on the home
+   * screen: this panel is 686px settled and it rendered nothing at all until
+   * the developer dataset landed, so the page grew by 686px several seconds in
+   * — measured at 6,604px → 7,430px. The rows are known ahead of the counts,
+   * which are the only part that has to wait, so only the counts are reserved.
+   */
+  if (!coverage) {
+    return (
+      <SkeletonPanel
+        title="Where these numbers come from"
+        subtitle="Coverage varies a great deal between them, so each row states its own."
+        minHeight={590}
+        className={className}
+      >
+        <ul className="space-y-3.5">
+          {Array.from({ length: 9 }, (_, index) => (
+            <li
+              key={index}
+              className="border-hairline grid gap-x-4 gap-y-1 border-b pb-3.5 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_5.5rem]"
+            >
+              <Skeleton className="h-3.5 w-40" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+              <Skeleton className="h-3 w-14 sm:ml-auto" />
+            </li>
+          ))}
+        </ul>
+      </SkeletonPanel>
+    );
+  }
   const universe = coverage.universe;
 
   const sources = [

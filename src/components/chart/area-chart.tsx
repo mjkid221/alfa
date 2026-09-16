@@ -88,7 +88,16 @@ export function AreaChart({
   }
 
   return (
-    <div className={cn("relative", className)} ref={ref}>
+    // Reserved before the container can be measured. The plot is hidden until
+    // `width > 0`, and on a server-rendered page that first measurement lands
+    // after the reader has already seen the layout — so without this the panel
+    // paints empty and then pushes everything below it down. `height` is a
+    // prop and does not depend on the width, so the reservation is exact.
+    <div
+      className={cn("relative", className)}
+      ref={ref}
+      style={{ minHeight: height }}
+    >
       {width > 0 && (
         <svg width={width} height={height} role="img" aria-label={label}>
           <defs>

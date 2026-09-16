@@ -182,7 +182,24 @@ export function AlphaMap({
   }
 
   return (
-    <div className={cn("relative", className)} ref={ref}>
+    /*
+     * `minHeight` holds the plot's space before it can be measured.
+     *
+     * The SVG renders only once `width > 0`, and width is measured in an
+     * effect — which on a server-rendered page means the HTML the reader first
+     * sees has an empty 138px box where a 568px chart belongs, and everything
+     * below it jumps once hydration measures the container. Making `useMeasure`
+     * a layout effect fixes a client-side navigation; only a reserved height
+     * fixes the first paint, because the server has no layout to measure.
+     *
+     * Before the width is known the wide height is assumed. A narrow viewport
+     * therefore settles *down* by 110px rather than up by 430.
+     */
+    <div
+      className={cn("relative", className)}
+      ref={ref}
+      style={{ minHeight: width > 0 ? height : HEIGHT }}
+    >
       {width > 0 && model && (
         <svg
           width={width}

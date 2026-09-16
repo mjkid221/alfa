@@ -1,6 +1,7 @@
 "use client";
 
 import { fundamentalsGrade } from "~/lib/grade";
+import type { ScreenMode } from "~/lib/screen-mode";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -30,6 +31,11 @@ import {
   Panel,
   TierBadge,
 } from "~/components/ui/primitives";
+import {
+  Skeleton,
+  SkeletonFigures,
+  SkeletonPanel,
+} from "~/components/ui/skeleton";
 import type { GlossaryTerm } from "~/lib/glossary";
 import {
   formatCount,
@@ -151,13 +157,23 @@ const METRIC_ROWS: {
   },
 ];
 
-export function ChainDetail({ slug }: { slug: string }) {
+export function ChainDetail({
+  slug,
+  initialMode,
+}: {
+  slug: string;
+  initialMode: ScreenMode;
+}) {
   const query = api.chains.detail.useQuery({ slug }, { staleTime: 60_000 });
   // The same persisted store the home screen reads, so the switch in the navbar
   // means one thing across the app and survives navigating into a chain.
-  const mode = useFiltersStore((state) => state.mode);
+  const storedMode = useFiltersStore((state) => state.mode);
   const setMode = useFiltersStore((state) => state.setMode);
-  useRehydrateFilters();
+  // See `Screen`: the cookie decides the first paint, the store takes over once
+  // it has read localStorage. This page is where it mattered most — the two
+  // modes are different pages, so the correction moved 2,901px.
+  const hydrated = useRehydrateFilters();
+  const mode = hydrated ? storedMode : initialMode;
   // The comparison window lives in the root layout, so this page can seed it
   // with the chain being read rather than making the reader pick it again.
   const { openCompare } = useWindows();
@@ -214,9 +230,36 @@ export function ChainDetail({ slug }: { slug: string }) {
   );
 
   if (query.isLoading) {
+    /*
+     * The page's own shape, not a centred word.
+     *
+     * `chains.detail` is prefetched on the server so this is rare, but when it
+     * is reached — a slow cold cache, a client-side navigation — a one-line
+     * "Loading chain…" in a vertically-centred flex box means the whole page
+     * arrives in one jolt from nothing. Three reserved panels at the heights
+     * the real ones settle at (501, 537, 732) make it an unveiling instead.
+     */
     return (
-      <main className="mx-auto flex min-h-dvh max-w-3xl items-center justify-center px-6">
-        <span className="text-ink-muted text-[13px]">Loading chain…</span>
+      <main className="mx-auto max-w-[1100px] space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-7">
+        <div
+          className="panel px-6 py-5"
+          role="status"
+          aria-label="Loading chain"
+        >
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-10 shrink-0 rounded-full" />
+            <Skeleton className="h-7 w-52" />
+          </div>
+          <div className="mt-5">
+            <SkeletonFigures count={4} />
+          </div>
+        </div>
+        <SkeletonPanel title="What the market pays" minHeight={430}>
+          <SkeletonFigures count={4} />
+        </SkeletonPanel>
+        <SkeletonPanel title="Capital on the chain" minHeight={620}>
+          <Skeleton className="h-full min-h-[600px] w-full" />
+        </SkeletonPanel>
       </main>
     );
   }
@@ -760,6 +803,35 @@ export function ChainDetail({ slug }: { slug: string }) {
                 <FlowMap corridors={chainCorridors} height={240} />
               </Panel>
             )}
+
+            {/*
+              Headlines arrive on their own query, so this panel used to appear
+              from nothing at ~705px and shove the peer map below it down the
+              page. A reservation cannot be perfect here — ten of the 85 chains
+              legitimately have no headlines, and for those the skeleton
+              collapses to nothing when the search comes back empty — but the
+              other 75 now get their news in place.
+            */}
+            {news.isPending ? (
+              <SkeletonPanel
+                title={`Headlines mentioning ${chain.name}`}
+                subtitle="Searching the last two weeks…"
+                minHeight={600}
+                bodyClassName="p-0"
+              >
+                <ul className="divide-hairline/60 divide-y">
+                  {Array.from({ length: 8 }, (_, index) => (
+                    <li key={index} className="flex gap-3 px-5 py-3">
+                      <Skeleton className="size-5 shrink-0 rounded-full" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <Skeleton className="h-3 w-[85%]" />
+                        <Skeleton className="h-2.5 w-24" />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </SkeletonPanel>
+            ) : null}
 
             {(news.data?.headlines.length ?? 0) > 0 && (
               <Panel

@@ -1,4 +1,7 @@
+import { cookies } from "next/headers";
+
 import { Screen } from "~/components/screen";
+import { MODE_COOKIE, modeFromCookie } from "~/lib/mode-cookie";
 import { api, HydrateClient } from "~/trpc/server";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +26,13 @@ export default async function Home() {
     api.market.brief.prefetch(),
   ]);
 
+  // Which page to render before the browser has told us anything. Both routes
+  // are already `force-dynamic`, so reading a cookie costs nothing.
+  const mode = modeFromCookie((await cookies()).get(MODE_COOKIE)?.value);
+
   return (
     <HydrateClient>
-      <Screen />
+      <Screen initialMode={mode} />
     </HydrateClient>
   );
 }

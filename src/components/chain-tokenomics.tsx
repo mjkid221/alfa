@@ -5,6 +5,12 @@ import { useMemo } from "react";
 import { LineChart } from "~/components/chart/line-chart";
 import { Explain } from "~/components/ui/explain";
 import { CollapsiblePanel, Panel } from "~/components/ui/primitives";
+import {
+  Skeleton,
+  SkeletonFigures,
+  SkeletonPanel,
+  SkeletonText,
+} from "~/components/ui/skeleton";
 import { formatCount, formatPercent } from "~/lib/format";
 import { sequentialStep } from "~/lib/palette";
 import { api } from "~/trpc/react";
@@ -87,10 +93,29 @@ export function ChainTokenomics({
   if (!investable) return null;
 
   if (query.isPending) {
+    /*
+     * 760px reserved, not a one-line "Reading the schedule…".
+     *
+     * This panel settles between 746px and 1,117px depending on how many
+     * tranches a chain has (Bitcoin 746, Solana 818, Ethereum 863, Arbitrum
+     * 1,117), and it used to announce itself at 107px — so the whole page
+     * below it jumped by up to a thousand pixels the moment the schedule
+     * landed. The reservation is near the median rather than the maximum: it
+     * cannot be right for every chain, and being 100px out beats 700px out.
+     */
     return (
-      <Panel title="Token unlocks and allocation">
-        <p className="text-ink-muted text-[12.5px]">Reading the schedule…</p>
-      </Panel>
+      <SkeletonPanel
+        title="Token unlocks and allocation"
+        subtitle="Reading the schedule…"
+        minHeight={760}
+      >
+        <div className="space-y-5">
+          <SkeletonFigures count={3} />
+          <Skeleton className="h-[220px] w-full" />
+          <SkeletonText lines={2} />
+          <Skeleton className="h-[180px] w-full" />
+        </div>
+      </SkeletonPanel>
     );
   }
 

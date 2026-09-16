@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 
 import { ChainDetail } from "~/components/chain-detail";
+import { MODE_COOKIE, modeFromCookie } from "~/lib/mode-cookie";
 import { getSnapshot } from "~/server/domain/aggregate";
 import { api, HydrateClient } from "~/trpc/server";
 
@@ -36,11 +38,14 @@ export default async function ChainPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  await api.chains.detail.prefetch({ slug });
+  const [mode] = await Promise.all([
+    cookies().then((jar) => modeFromCookie(jar.get(MODE_COOKIE)?.value)),
+    api.chains.detail.prefetch({ slug }),
+  ]);
 
   return (
     <HydrateClient>
-      <ChainDetail slug={slug} />
+      <ChainDetail slug={slug} initialMode={mode} />
     </HydrateClient>
   );
 }

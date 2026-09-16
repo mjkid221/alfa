@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { Explain } from "~/components/ui/explain";
+import { Skeleton } from "~/components/ui/skeleton";
 import { ChainAvatar } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
@@ -181,11 +182,33 @@ function LeaderCard({
 
   if (!leader) {
     return (
-      <section className={cn("px-5 py-4 lg:px-6", className)}>
+      <section className={cn("flex flex-col px-5 py-4 lg:px-6", className)}>
         <Chip label={category.label} term={category.term} />
-        <p className="text-ink-muted mt-3 text-[13px] leading-relaxed">
-          {loading ? "Reading the chains…" : "No chain reported this figure."}
-        </p>
+        {loading ? (
+          /*
+           * Shaped like the tile it stands in for, not a sentence.
+           *
+           * These three tiles are the developer hero, and the hero stretches to
+           * whatever the rail beside it needs — so a tile holding one line of
+           * text while the dataset loaded left the whole panel 140px short
+           * (825px against 965px) and then pushed the table down when the
+           * figures arrived. Chain name, figure, runner-up: the same three
+           * rows the settled tile has.
+           */
+          <div className="mt-2.5 space-y-2.5" aria-hidden>
+            <div className="flex items-center gap-2.5">
+              <Skeleton className="size-[22px] shrink-0 rounded-full" />
+              <Skeleton className="h-4 w-28" />
+            </div>
+            <Skeleton className="h-8 w-36" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        ) : (
+          <p className="text-ink-muted mt-3 text-[13px] leading-relaxed">
+            No chain reported this figure.
+          </p>
+        )}
       </section>
     );
   }
