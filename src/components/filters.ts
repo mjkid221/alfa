@@ -1,3 +1,4 @@
+import type { ScreenMode } from "~/lib/screen-mode";
 import type { ChainSnapshot } from "~/server/domain/types";
 
 /**
@@ -81,10 +82,41 @@ function matchesPreset(chain: ChainSnapshot, preset: PresetKey): boolean {
   }
 }
 
+/**
+ * Which filters a mode actually offers a control for.
+ *
+ * **A mode must not apply a filter it does not show.** `preset` and
+ * `excludeValueTraps` are verdicts of the valuation model — "Priced ahead",
+ * "Deep value", "cheap while its activity contracts" — and `Controls` hides
+ * both in developer mode, because they mean nothing to a reader asking where
+ * to deploy. It went on applying them anyway: a preset chosen in research mode
+ * silently narrowed the developer table, with nothing on screen to say so and
+ * no control to clear it. Switching mode is not a filter.
+ *
+ * The three that survive are the three whose controls stay on screen: the
+ * layer, the search box and the native-token toggle. The rule is that simple,
+ * and it is the rule rather than the list that matters — add a control to one
+ * mode only, and add it here too.
+ *
+ * Deliberately **scoped at read time rather than cleared in the store**, so a
+ * reader who sets a preset, looks at developer mode and comes back still has
+ * their preset.
+ */
+function scopeToMode(filters: Filters, mode: ScreenMode): Filters {
+  if (mode === "research") return filters;
+  return {
+    ...filters,
+    preset: DEFAULT_FILTERS.preset,
+    excludeValueTraps: DEFAULT_FILTERS.excludeValueTraps,
+  };
+}
+
 export function applyFilters(
   chains: readonly ChainSnapshot[],
-  filters: Filters,
+  rawFilters: Filters,
+  mode: ScreenMode,
 ): ChainSnapshot[] {
+  const filters = scopeToMode(rawFilters, mode);
   const needle = filters.query.trim().toLowerCase();
 
   return chains.filter((chain) => {

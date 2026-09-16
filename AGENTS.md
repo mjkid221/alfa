@@ -308,6 +308,17 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   eight recent blocks, which ran 16.2M–35.5M. Reporting fullness would mean
   summing `computeUnitsConsumed` across a block — about a megabyte a block, and
   the public RPC 429s after six.
+- **A mode must not apply a filter it does not show.** `Controls` hides the
+  screen presets and "Hide value traps" in developer mode, because both are
+  verdicts of the valuation model and mean nothing to someone choosing where to
+  deploy — but `applyFilters` went on applying them, so a preset chosen in
+  research mode silently narrowed the developer table with nothing on screen to
+  say so and no control to clear it ("Priced ahead" showed 18 of 85 in both).
+  `applyFilters` now takes the mode and scopes to the filters that mode offers:
+  layer, search and the native-token toggle survive, preset and value traps do
+  not. **Scoped at read time, not cleared in the store**, so the preset is still
+  there when the reader comes back. Add a control to one mode only and it has to
+  be added to `scopeToMode` as well.
 - **The developer table is five columns, and that is deliberate.** Nakamoto (20
   of 85), rollup stage (21), block fullness and the transfer cost were removed
   from it and kept on the chain pages. A table of 85 rows is the wrong place for
