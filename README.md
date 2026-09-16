@@ -567,8 +567,9 @@ a filter by virtual machine. None of it feeds the score.
 | What | Where from | Covers |
 |---|---|---|
 | Execution price | Each chain's own metering — gas, compute units, virtual bytes | 54 of 85 |
+| That price in dollars | One simple transfer, in the token gas is paid in | 43 of 85 |
 | Block limit | Consensus parameters, or the block the price came from | 45 of 85 |
-| Contract size limit | Measured against each chain | 48 of 85, 39 measured |
+| Contract size limit | Measured on EVM chains, published by the rest | 54 of 85, 39 measured |
 | Rollup stage | L2Beat | 21 of 85 |
 | Virtual machine, rollup stack, stage | L2Beat, or proven by answering an Ethereum RPC | 79 of 85 |
 | Monthly active developers | Electric Capital | 45 of 85 |
@@ -684,6 +685,27 @@ bytes and time, not gas"; all seven read **no cap**. And Solana's 48,000,000
 compute units is a validator constant rather than something the chain serves, so
 it is marked as one — eight recent blocks ran 16.2M to 35.5M, which is
 consistent with it.
+
+**A price per unit is honest and illegible, so it carries a dollar figure.**
+160,000,000 inj per gas and 5,000 lamports per signature say nothing about
+whether a chain is expensive, so beneath each price sits what one simple
+transfer costs — $0.006 on Ethereum, $0.107 on Bitcoin, $0.0005 on Solana. It
+is priced in **the token gas is actually paid in**, which is not always the
+chain's own: an ETH-settled rollup charges in ETH while its governance token
+trades separately, and pricing Arbitrum's gas in ARB read $0.00000007 against a
+true $0.001. Where that token is not one of the 85, or where a chain's
+denomination convention would make the exponent a guess, there is no dollar
+figure rather than a wrong one — which is why the Cosmos chains show a price
+and no money.
+
+**Contract size limits now cover the non-EVM chains too.** The EVM ones are
+measured, by asking each chain to size a deployment; that trick does not travel,
+so the rest are the ceilings they publish. Near serves `max_contract_size` — 4
+MB, four hundred times what EIP-170 allows — as a protocol parameter, and
+Cardano serves `max_tx_size`, both read live. Solana's 10 MB, Stellar's 64 KB
+and Algorand's 8 KB are documented constants. Two of these cap the *transaction*
+carrying the code rather than the code itself, which bounds a deployment without
+being a code limit; those carry a dagger and say so.
 
 **The table is five columns, and the ones it lost went to the chain pages.**
 The Nakamoto coefficient can be computed for 20 of the 85 chains and a rollup

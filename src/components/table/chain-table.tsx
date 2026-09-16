@@ -21,6 +21,7 @@ import type { GlossaryTerm } from "~/lib/glossary";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
+  formatFeeUsd,
   formatGas,
   formatGasWithUnit,
   formatInteger,
@@ -115,6 +116,8 @@ interface Column {
    * concept and one whose node did not answer.
    */
   applies?: (chain: ChainSnapshot, dev: DeveloperMetrics | null) => boolean;
+  /** Why it does not apply. Falls back to the group's note. */
+  notApplicableReason?: string;
   /** Opens the full definition. Every scored column carries one. */
   term?: GlossaryTerm;
   align: "left" | "right";
@@ -479,8 +482,13 @@ export function ChainTable({
         group: "universal",
         align: "right",
         width: 168,
-        value: (_chain, dev) => dev?.execution?.price ?? null,
-        render: (_chain, { dev }) => <ExecutionPrice meter={dev?.execution} />,
+        // Sorted on the dollar figure where there is one, because that is the
+        // comparable quantity — a price per unit is only comparable to itself.
+        value: (_chain, dev) =>
+          dev?.executionUsd ?? dev?.execution?.price ?? null,
+        render: (_chain, { dev }) => (
+          <ExecutionPrice meter={dev?.execution} usd={dev?.executionUsd} />
+        ),
       },
       {
         key: "gasLimit",
@@ -529,10 +537,16 @@ export function ChainTable({
         label: "Contract limit",
         hint: "Largest contract that can be deployed, in bytes. A protocol constant, not a live reading.",
         term: "contractSize",
-        group: "evm",
+        group: "universal",
         align: "right",
-        width: 132,
-        applies: (_chain, dev) => isEvmRow(dev),
+        width: 148,
+        // Applies wherever a chain runs deployable code at all. Bitcoin and
+        // Ripple do not, and say so rather than showing a dash that would mean
+        // the ceiling could not be read.
+        applies: (_chain, dev) =>
+          dev?.contractSizeLimit != null || isEvmRow(dev),
+        notApplicableReason:
+          "This chain does not take deployable contracts, so there is no size to cap.",
         value: (_chain, dev) => dev?.contractSizeLimit ?? null,
         render: (_chain, { dev }) =>
           dev?.contractSizeLimit ? (
@@ -540,16 +554,17 @@ export function ChainTable({
             // developer knows by sight, and "24.6KB" throws that away.
             <span
               className="tnum text-[12.5px]"
-              title={
-                dev.contractSizeSource === "measured"
-                  ? "Measured against this chain."
-                  : "EIP-170's default, assumed: this chain's public RPC refused the probe."
-              }
+              title={dev.contractSizeNote ?? undefined}
             >
               {formatInteger(dev.contractSizeLimit)}
               <span className="text-ink-faint ml-1 text-[10.5px]">B</span>
               {dev.contractSizeSource === "assumed" && (
                 <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
+              )}
+              {dev.contractSizeBasis === "transaction" && (
+                // The chain caps the transaction carrying the code, not the
+                // code — a weaker claim, and one worth marking.
+                <span className="text-ink-faint ml-0.5 text-[10.5px]">†</span>
               )}
             </span>
           ) : (
@@ -826,6 +841,7 @@ export function ChainTable({
                       return column.applies && !column.applies(chain, dev) ? (
                         <NotApplicable
                           reason={
+                            column.notApplicableReason ??
                             COLUMN_GROUPS[column.group ?? "universal"].note
                           }
                         />
@@ -905,14 +921,54 @@ function NotApplicable({ reason }: { reason: string }) {
  * chain publishes a figure that is already readable in its own unit, so those
  * are printed as given.
  */
-function ExecutionPrice({ meter }: { meter?: ExecutionMeter | null }) {
-  if (meter?.price == null) return <Missing />;
-  if (meter.priceLabel === "gwei") return <Gas value={meter.price} />;
+function ExecutionPrice({
+  meter,
+  usd,
+}: {
+  meter?: ExecutionMeter | null;
+  usd?: number | null;
+}) {
+  if (meter?.price == null) {
+    return (
+      <span className="inline-flex flex-col items-end">
+        <Missing />
+        {/* The second line is reserved on every row, present or not, so the
+            table does not change height as the dollar figures arrive. */}
+        <span className="text-ink-faint/60 text-[10.5px] leading-tight">
+          &nbsp;
+        </span>
+      </span>
+    );
+  }
   return (
-    <span className="tnum text-[12.5px]" title={`Source: ${meter.source}.`}>
-      {formatMeterValue(meter.price)}
-      <span className="text-ink-faint ml-1 text-[10.5px]">
-        {meter.priceLabel}
+    <span className="inline-flex flex-col items-end">
+      {meter.priceLabel === "gwei" ? (
+        <Gas value={meter.price} />
+      ) : (
+        <span className="tnum text-[12.5px]" title={`Source: ${meter.source}.`}>
+          {formatMeterValue(meter.price)}
+          <span className="text-ink-faint ml-1 text-[10.5px]">
+            {meter.priceLabel}
+          </span>
+        </span>
+      )}
+      {/*
+        What the price means in money. A price per metered unit is the honest
+        figure and not a legible one — "160M inj per gas" and "5,000 lamports
+        per signature" say nothing about whether a chain is expensive — so the
+        same price is anchored to an operation with a size.
+      */}
+      <span
+        className="text-ink-faint tnum text-[10.5px] leading-tight"
+        title={
+          usd != null && meter.referenceBasis
+            ? `${meter.referenceBasis}, priced in the token gas is paid in.`
+            : "No dollar figure: either the size of an operation is not published here, or the token gas is paid in is not one of the 85."
+        }
+      >
+        {usd == null
+          ? "\u00A0"
+          : `${formatFeeUsd(usd)} ${meter.referenceLabel}`}
       </span>
     </span>
   );

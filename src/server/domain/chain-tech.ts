@@ -376,6 +376,54 @@ export const PROPOSALS: Record<string, ProposalSource[]> = {
   Berachain: [{ kind: "discourse", host: "forum.berachain.com", prefix: "" }],
 };
 
+/**
+ * What a non-EVM chain will let you deploy, in bytes.
+ *
+ * The EVM half of `CONTRACT_SIZE_LIMIT` above is **measured**, by asking each
+ * chain to size a deployment. That trick does not travel — there is no
+ * `eth_estimateGas` on Solana — so these are the chains' own published
+ * ceilings, verified against their documentation on 16 September 2026 and
+ * marked `published` rather than `measured` so the interface never presents
+ * them as something they are not.
+ *
+ * **Near is deliberately absent from this table**: `max_contract_size` is a
+ * protocol parameter served by the same RPC call that gives its gas price, so
+ * it is read live in `sources/execution.ts` rather than written down here.
+ *
+ * `basis` is the part worth reading. Two of these do not cap code at all —
+ * they cap the *transaction* that carries it, which bounds a deployment
+ * without being a code limit. Quoting 16,384 for Cardano without saying that
+ * would claim a precision the number does not have.
+ */
+export interface CodeSizeLimit {
+  bytes: number;
+  basis: "code" | "transaction";
+  note: string;
+}
+
+export const CODE_SIZE_LIMIT: Record<string, CodeSizeLimit> = {
+  Solana: {
+    bytes: 10_485_760,
+    basis: "code",
+    note: "MAX_PERMITTED_DATA_LENGTH — the ceiling on any account's data, and a program is an account. Four hundred times what EIP-170 allows.",
+  },
+  Stellar: {
+    bytes: 65_536,
+    basis: "code",
+    note: "Soroban's contractMaxSizeBytes, from the network's contract-size settings.",
+  },
+  Algorand: {
+    bytes: 8_192,
+    basis: "code",
+    note: "Four pages of 2,048 bytes, approval and clear-state programs together.",
+  },
+  Aptos: {
+    bytes: 65_536,
+    basis: "transaction",
+    note: "txn.max_transaction_size_in_bytes from the on-chain gas schedule. A module arrives inside a transaction, so this bounds a publish rather than the code itself; governance transactions get 1 MB.",
+  },
+};
+
 /* -------------------------------------------------------- decentralisation -- */
 
 /**

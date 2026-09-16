@@ -18,6 +18,7 @@ import { Explain } from "~/components/ui/explain";
 import { ChainAvatar, Panel } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
+  formatFeeUsd,
   formatGasWithUnit,
   formatInteger,
   formatMeterValue,
@@ -120,7 +121,14 @@ export function ChainDeveloper({
 
   if (!dev) return null;
 
-  const { gas, execution, developers, decentralisation, proposals } = dev;
+  const {
+    gas,
+    execution,
+    executionUsd,
+    developers,
+    decentralisation,
+    proposals,
+  } = dev;
   const hasAnything =
     dev.vm ??
     gas ??
@@ -162,13 +170,7 @@ export function ChainDeveloper({
                 label="Contract limit"
                 term="contractSize"
                 value={`${formatInteger(dev.contractSizeLimit)} bytes`}
-                note={
-                  dev.contractSizeSource === "assumed"
-                    ? "EIP-170 assumed; this chain refused the probe"
-                    : dev.contractSizeLimit === 24_576
-                      ? "EIP-170, measured"
-                      : `${(dev.contractSizeLimit / 24_576).toFixed(1)}× EIP-170, measured`
-                }
+                note={dev.contractSizeNote ?? undefined}
               />
             )}
             {dev.stage && (
@@ -203,10 +205,14 @@ export function ChainDeveloper({
                       ? formatGasWithUnit(execution.price)
                       : `${formatMeterValue(execution.price)} ${execution.priceLabel}`
                   }
+                  // The dollar figure is what the price means; the source is
+                  // where it came from. Both matter and neither is the other.
                   note={
-                    gas
-                      ? `read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`
-                      : execution.source
+                    executionUsd != null
+                      ? `${formatFeeUsd(executionUsd)} ${execution.referenceLabel} — ${execution.referenceBasis}`
+                      : gas
+                        ? `read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`
+                        : execution.source
                   }
                 />
               )}

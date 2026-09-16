@@ -792,6 +792,12 @@ export function DeveloperSources({
       note: "Not an EVM-only idea: every chain charges for work and most cap how much fits in a block, they just count different things. Each figure carries its own unit rather than being forced into gwei, which would mean nothing on Solana.",
     },
     {
+      what: "That price in dollars",
+      where: "One simple transfer, in the token gas is paid in",
+      covered: coverage?.executionUsd ?? null,
+      note: "A price per metered unit is not comparable between chains; the cost of one operation is. Priced in the token gas is actually paid in \u2014 an ETH-settled rollup charges in ETH, and using its governance token instead read $0.00000007 against a true $0.001. Blank where that token is not one of the 85, or where a chain's denomination convention would make the exponent a guess.",
+    },
+    {
       what: "Block limit",
       where:
         "The chain's consensus parameters, or the block the price came from",
@@ -800,7 +806,7 @@ export function DeveloperSources({
     },
     {
       what: "Contract size limit",
-      where: "Measured against each chain, by asking it to size a deployment",
+      where: "Measured on EVM chains, published by the rest",
       covered: coverage?.contractSize ?? null,
       note: `No RPC method returns it, so it is measured: six bytes of initcode that deploy an N-byte contract, binary-searched through eth_estimateGas until the chain refuses. ${coverage?.contractSizeMeasured ?? 39} of the ${coverage?.contractSize ?? 48} answered${measuredAt ? ` when swept on ${measuredAt}` : ""}; the rest refused the probe and fall back to EIP-170, marked as assumed. It is a protocol constant, so it moves only at a hard fork.`,
     },

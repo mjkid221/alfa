@@ -313,18 +313,34 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   from it and kept on the chain pages. A table of 85 rows is the wrong place for
   a column blank for 64 of them; a chain page is the right place, where an
   absent figure costs a line rather than a column.
-- **The transfer cost was built and removed.** It was the one figure comparable
-  across machines — 21,000 gas by the EVM spec, a flat minimum on Ripple,
-  Stellar, Algorand and MultiversX, a protocol parameter on Near — and it is
-  gone because a per-chain execution price answers the question people actually
-  ask. Its one lasting lesson: **the gas token is not always the chain's token**,
-  so pricing an ETH-settled rollup's gas in its governance token read
-  $0.00000007 against a true $0.001. If a dollar figure ever returns, that is
-  the trap.
-- **"Gas price for non-EVM chains" was the wrong question once; it is not now.**
-  The earlier answer was a transfer cost, on the reasoning that gwei does not
-  travel. Gwei still does not — but a *price per metered unit* does, provided
-  each figure names its own unit, and that is what the columns carry.
+- **A per-unit price needs a dollar anchor to be legible.** "160,000,000 inj per
+  gas" and "5,000 lamports per signature" are honest and say nothing about
+  whether a chain is expensive, so each meter carries `referenceNative` — what
+  one simple transfer costs in the chain's own token — and `developer.ts` prices
+  it. **43 of the 54** priced chains get a dollar figure.
+- **The gas token is not always the chain's token.** Every ETH-settled rollup
+  charges gas in ETH while its governance token trades separately: pricing
+  Arbitrum's gas in ARB read **$0.00000007 against a true $0.001**, four orders
+  of magnitude cheap and in the direction that puts a chain at the top of a
+  cheapest-first ranking. `chainid.network`'s `nativeCurrency.symbol` is the
+  authority (`rpc:registry:v2`), resolved against the universe's own prices, so
+  no market source was added. Where the ticker is not one of the 85 — Gnosis
+  charges in xDAI — there is no dollar figure rather than a wrong one.
+- **Cosmos chains publish a price and get no dollars.** The minimum gas price's
+  denomination is a per-chain convention — "inj" for a base unit of 10^-18,
+  "nhash" for 10^-9 — and an exponent guessed wrong is a twelve-order-of-
+  magnitude error in a money figure. Better blank.
+- **Contract size limits: measured on the EVM, published elsewhere.** The
+  binary-search probe does not travel — there is no `eth_estimateGas` on Solana
+  — so non-EVM ceilings are the chains' own: **Near serves `max_contract_size`
+  (4 MB) as a protocol parameter and Cardano serves `max_tx_size`, both read
+  live** in `sources/execution.ts` by the call that already fetches their gas
+  price; Solana's 10,485,760, Stellar's 65,536 and Algorand's 8,192 are
+  documented constants in `CODE_SIZE_LIMIT`. Coverage 48 → 54.
+- **`contractSizeBasis` is the honest half of that.** Cardano and Aptos cap the
+  *transaction* carrying the code, not the code — a deployment is bounded
+  without there being a code limit as such — so those carry a dagger and say so.
+  An asterisk still means EIP-170 assumed after a refused probe.
 - **The 2^50 gas limit is a class, not an Arbitrum quirk.** Six chains return
   exactly `0x4000000000000` — Arbitrum, zkSync Era, Abstract, Etherlink, Reya
   and Robinhood Chain — which is Arbitrum Nitro and the zkSync stack. They carry

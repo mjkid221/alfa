@@ -72,6 +72,28 @@ export interface ExecutionMeter {
   limitUncapped: boolean;
   /** How full the most recent block was, 0–100. */
   usedPct: number | null;
+  /**
+   * What one simple operation costs, in the chain's own token.
+   *
+   * A price per metered unit is the honest figure and it is not a legible one:
+   * "160,000,000 inj per gas" and "5,000 lamports per signature" say nothing
+   * about whether a chain is expensive. This anchors the price to something
+   * with a size — a transfer — so the interface can put a dollar figure beside
+   * it. Null where the operation's size is not published.
+   */
+  referenceNative: number | null;
+  /** What that operation is: "a transfer", "a payment". */
+  referenceLabel: string;
+  /** What was assumed about its size, where anything was. */
+  referenceBasis: string;
+  /**
+   * The largest contract the chain will accept, where it publishes one.
+   *
+   * Only Near fills this in, because `max_contract_size` is a protocol
+   * parameter served by the same call that gives the gas price. Every other
+   * non-EVM ceiling is a documented constant and lives in `chain-tech.ts`.
+   */
+  codeSizeLimit: number | null;
   source: string;
 }
 
@@ -98,6 +120,15 @@ function positive(value: number): number {
 const BITCOIN_BLOCK_WEIGHT = 4_000_000;
 const BITCOIN_BLOCK_VBYTES = BITCOIN_BLOCK_WEIGHT / 4;
 
+/**
+ * The reference spend: one native segwit input, two outputs.
+ *
+ * 141 vB is what a wallet actually builds — a one-output spend is 110 and a
+ * legacy P2PKH 226, so the choice matters and is worth naming rather than
+ * burying in a constant.
+ */
+const BITCOIN_TRANSFER_VBYTES = 141;
+
 /** Solana's base fee, in lamports per signature. */
 const SOLANA_LAMPORTS_PER_SIGNATURE = 5_000;
 
@@ -110,6 +141,18 @@ const SOLANA_LAMPORTS_PER_SIGNATURE = 5_000;
  */
 const SOLANA_BLOCK_COMPUTE_UNITS = 48_000_000;
 
+/**
+ * The largest program Solana will hold, in bytes.
+ *
+ * `MAX_PERMITTED_DATA_LENGTH` — the ceiling on any account's data, and a
+ * program is an account. Ten megabytes, which is four hundred times what an
+ * EVM chain allows.
+ */
+const SOLANA_MAX_PROGRAM_BYTES = 10_485_760;
+
+/** A plain Cardano payment transaction, in bytes. */
+const CARDANO_TRANSFER_BYTES = 280;
+
 const LOADERS: Record<string, Loader> = {
   Bitcoin: async () => {
     const [fees, blocks] = await Promise.all([
@@ -120,10 +163,11 @@ const LOADERS: Record<string, Loader> = {
     ]);
     const tip = Array.isArray(blocks) ? blocks[0] : null;
     const weight = Number(tip?.weight ?? 0);
+    // The half-hour rate: what a transfer costs, not what jumping the queue
+    // costs.
+    const satsPerVbyte = positive(Number(fees?.halfHourFee ?? 0));
     return {
-      // The half-hour rate: what a transfer costs, not what jumping the queue
-      // costs.
-      price: positive(Number(fees?.halfHourFee ?? 0)),
+      price: satsPerVbyte,
       priceLabel: "sat/vB",
       blockLimit: BITCOIN_BLOCK_VBYTES,
       limitLabel: "vB",
@@ -133,6 +177,10 @@ const LOADERS: Record<string, Loader> = {
         weight > 0
           ? Math.min(100, (weight / BITCOIN_BLOCK_WEIGHT) * 100)
           : null,
+      referenceNative: (satsPerVbyte * BITCOIN_TRANSFER_VBYTES) / 1e8,
+      referenceLabel: "a transfer",
+      referenceBasis: `${BITCOIN_TRANSFER_VBYTES} vB — one input, two outputs, native segwit`,
+      codeSizeLimit: null,
       source: "mempool.space",
     };
   },
@@ -146,6 +194,10 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: true,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: SOLANA_LAMPORTS_PER_SIGNATURE / 1e9,
+      referenceLabel: "a transfer",
+      referenceBasis: "one signature at the protocol's 5,000-lamport base fee",
+      codeSizeLimit: SOLANA_MAX_PROGRAM_BYTES,
       source: "Solana protocol constants",
     }),
 
@@ -159,11 +211,18 @@ const LOADERS: Record<string, Loader> = {
         "block",
         { finality: "final" },
       ),
-      rpc<{ gas_limit?: number }>(
-        "https://rpc.mainnet.near.org",
-        "EXPERIMENTAL_protocol_config",
-        { finality: "final" },
-      ),
+      rpc<{
+        gas_limit?: number;
+        runtime_config?: {
+          wasm_config?: { limit_config?: { max_contract_size?: number } };
+          transaction_costs?: {
+            action_receipt_creation_config?: { execution?: number };
+            action_creation_config?: { transfer_cost?: { execution?: number } };
+          };
+        };
+      }>("https://rpc.mainnet.near.org", "EXPERIMENTAL_protocol_config", {
+        finality: "final",
+      }),
     ]);
 
     const chunks = block?.chunks ?? [];
@@ -186,33 +245,77 @@ const LOADERS: Record<string, Loader> = {
      */
     const YOCTO_PER_NEAR = 1e24;
     const GAS_PER_TGAS = 1e12;
+    const yocto = positive(Number(price?.gas_price ?? 0));
+
+    /*
+     * A transfer is two receipts — the one the sender creates and the one the
+     * network executes — and both halves are published parameters, so this is
+     * the chain's own answer rather than an estimate of it.
+     */
+    const costs = config?.runtime_config?.transaction_costs;
+    const receipt = Number(
+      costs?.action_receipt_creation_config?.execution ?? 0,
+    );
+    const transfer = Number(
+      costs?.action_creation_config?.transfer_cost?.execution ?? 0,
+    );
+    const transferGas =
+      receipt > 0 && transfer > 0 ? (receipt + transfer) * 2 : null;
     return {
-      price:
-        (positive(Number(price?.gas_price ?? 0)) * GAS_PER_TGAS) /
-        YOCTO_PER_NEAR,
+      price: (yocto * GAS_PER_TGAS) / YOCTO_PER_NEAR,
       priceLabel: "NEAR/Tgas",
       blockLimit: limit / GAS_PER_TGAS,
       limitLabel: "Tgas per shard",
       limitAssumed: false,
       limitUncapped: false,
       usedPct: used === null ? null : Math.min(100, used * 100),
+      referenceNative:
+        transferGas === null ? null : (transferGas * yocto) / YOCTO_PER_NEAR,
+      referenceLabel: "a transfer",
+      referenceBasis:
+        transferGas === null
+          ? ""
+          : `${(transferGas / GAS_PER_TGAS).toFixed(2)} Tgas — receipt creation plus the transfer action, sent and executed`,
+      // A protocol parameter, so this is the chain's own answer rather than a
+      // constant someone has written down.
+      codeSizeLimit:
+        Number(
+          config?.runtime_config?.wasm_config?.limit_config
+            ?.max_contract_size ?? 0,
+        ) || null,
       source: "Near protocol config",
     };
   },
 
   Cardano: async () => {
     const params = await json<
-      { min_fee_a?: number; max_block_size?: number }[]
+      {
+        min_fee_a?: number;
+        min_fee_b?: number;
+        max_block_size?: number;
+        max_tx_size?: number;
+      }[]
     >("https://api.koios.rest/api/v1/epoch_params", 25_000);
     const row = Array.isArray(params) ? params[0] : null;
+    const feeA = positive(Number(row?.min_fee_a ?? 0));
+    const feeB = Number(row?.min_fee_b ?? 0);
     return {
-      price: positive(Number(row?.min_fee_a ?? 0)),
+      price: feeA,
       priceLabel: "lovelace/byte",
       blockLimit: positive(Number(row?.max_block_size ?? 0)),
       limitLabel: "bytes",
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      // The fee is `b + a x bytes`, so the per-byte price alone understates it
+      // by the constant term — 155,381 lovelace, which is most of a transfer.
+      referenceNative:
+        feeB > 0 ? (feeB + feeA * CARDANO_TRANSFER_BYTES) / 1e6 : null,
+      referenceLabel: "a transfer",
+      referenceBasis: `${feeB.toLocaleString("en-GB")} + ${feeA} a byte over ${CARDANO_TRANSFER_BYTES} bytes`,
+      // A Plutus script has to arrive inside a transaction, so the transaction
+      // ceiling is what bounds it.
+      codeSizeLimit: Number(row?.max_tx_size ?? 0) || null,
       source: "Koios epoch parameters",
     };
   },
@@ -242,6 +345,10 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: false,
       limitUncapped: false,
       usedPct: Math.min(100, (used / capacity) * 100),
+      referenceNative: positive(Number(fees?.last_ledger_base_fee ?? 0)) / 1e7,
+      referenceLabel: "a payment",
+      referenceBasis: "one operation at the ledger's base fee",
+      codeSizeLimit: null,
       source: "Horizon",
     };
   },
@@ -272,6 +379,10 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: drops / 1e6,
+      referenceLabel: "a payment",
+      referenceBasis: "the current open-ledger fee",
+      codeSizeLimit: null,
       source: "XRP Ledger node",
     };
   },
@@ -288,6 +399,10 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: positive(Number(res?.["min-fee"] ?? 0)) / 1e6,
+      referenceLabel: "a payment",
+      referenceBasis: "the network minimum fee",
+      codeSizeLimit: null,
       source: "Algorand node",
     };
   },
@@ -304,25 +419,37 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: null,
+      referenceLabel: "",
+      referenceBasis: "",
+      codeSizeLimit: null,
       source: "Aptos fullnode",
     };
   },
 
   Multiversx: async () => {
     const res = await json<{
-      data?: { config?: { erd_min_gas_price?: number } };
+      data?: {
+        config?: { erd_min_gas_price?: number; erd_min_gas_limit?: number };
+      };
     }>("https://api.multiversx.com/network/config");
+    const base = positive(Number(res?.data?.config?.erd_min_gas_price ?? 0));
+    const minGas = Number(res?.data?.config?.erd_min_gas_limit ?? 0);
     // 1,000,000,000 of EGLD's smallest unit is one nano-EGLD, which is the
     // readable form of the same number.
     const NANO = 1e9;
     return {
-      price: positive(Number(res?.data?.config?.erd_min_gas_price ?? 0)) / NANO,
+      price: base / NANO,
       priceLabel: "nEGLD/gas",
       blockLimit: null,
       limitLabel: "",
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: minGas > 0 ? (base * minGas) / 1e18 : null,
+      referenceLabel: "a transfer",
+      referenceBasis: `${minGas.toLocaleString("en-GB")} gas, which is what a transfer carrying no data costs`,
+      codeSizeLimit: null,
       source: "MultiversX API",
     };
   },
@@ -349,6 +476,10 @@ const LOADERS: Record<string, Loader> = {
       limitAssumed: false,
       limitUncapped: false,
       usedPct: null,
+      referenceNative: null,
+      referenceLabel: "",
+      referenceBasis: "",
+      codeSizeLimit: null,
       source: "TronGrid chain parameters",
     };
   },
@@ -401,6 +532,14 @@ async function cosmosMeter(lcd: string): Promise<ExecutionMeter> {
     // by bytes and time rather than by gas.
     limitUncapped: maxGas === -1,
     usedPct: null,
+    // The minimum gas price's denomination is a per-chain convention — "inj"
+    // for a base unit of 10^-18, "nhash" for 10^-9 — and getting the exponent
+    // wrong would be a twelve-order-of-magnitude error in a dollar figure. So
+    // Cosmos chains publish their price and are left without one in money.
+    referenceNative: null,
+    referenceLabel: "",
+    referenceBasis: "",
+    codeSizeLimit: null,
     source: "consensus parameters",
   };
   if (

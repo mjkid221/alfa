@@ -1,6 +1,10 @@
 import "server-only";
 
-import { fetchGasReadings, type GasReading } from "~/server/sources/chain-rpc";
+import {
+  fetchGasReadings,
+  fetchRpcRegistry,
+  type GasReading,
+} from "~/server/sources/chain-rpc";
 import {
   fetchDecentralisation,
   type Decentralisation,
@@ -18,6 +22,7 @@ import {
 import { fetchChainsTvl } from "~/server/sources/defillama";
 import { settle } from "~/server/lib/http";
 import {
+  CODE_SIZE_LIMIT,
   CONTRACT_SIZE_LIMIT,
   CONTRACT_SIZE_MEASURED,
   EIP170_LIMIT,
@@ -60,7 +65,15 @@ export interface DeveloperMetrics {
    * presented as a finding is exactly how the old Arbitrum entry came to be
    * wrong — so the interface can say which it is looking at.
    */
-  contractSizeSource: "measured" | "assumed" | null;
+  contractSizeSource: "measured" | "published" | "assumed" | null;
+  /**
+   * Whether the ceiling bounds the code or the transaction carrying it.
+   * Cardano and Aptos cap the transaction, which bounds a deployment without
+   * being a code limit — a distinction the tooltip has to be able to make.
+   */
+  contractSizeBasis: "code" | "transaction" | null;
+  /** What the contract ceiling actually is, for the cases that need saying. */
+  contractSizeNote: string | null;
   gas: GasReading | null;
   /**
    * What a unit of execution costs here and how many fit in a block, in
@@ -71,6 +84,15 @@ export interface DeveloperMetrics {
    * the gas columns are answerable by chains that have never heard of gwei.
    */
   execution: ExecutionMeter | null;
+  /**
+   * What the execution price comes to in money, for one simple operation.
+   *
+   * A price per metered unit is honest and illegible — "160,000,000 inj per
+   * gas" says nothing about whether a chain is expensive. This is the same
+   * price with a size attached and a token price applied, so the column can
+   * say what it means.
+   */
+  executionUsd: number | null;
   developers: DevActivity | null;
   decentralisation: Decentralisation | null;
   proposals: ProposalFeed | null;
@@ -96,6 +118,8 @@ export interface DeveloperDataset {
     executionPrice: number;
     /** Of those, the ones that also cap how much fits in a block. */
     executionLimit: number;
+    /** Of those, the ones whose price could be anchored in dollars. */
+    executionUsd: number;
     contractSize: number;
     /** Of those, the ones actually measured rather than assumed from EIP-170. */
     contractSizeMeasured: number;
@@ -106,8 +130,104 @@ export interface DeveloperDataset {
   };
 }
 
+/**
+ * The intrinsic gas cost of a value transfer, from the yellow paper.
+ *
+ * Not an estimate and not a measurement: 21,000 is what the EVM charges before
+ * a single byte of calldata, which is why anchoring an EVM chain's gas price
+ * in money needs no request of its own.
+ */
+const EVM_TRANSFER_GAS = 21_000;
+
 const isEvm = (vm: string | null) =>
   vm !== null && /^(evm|.*evm)$/i.test(vm.replace(/\s+/g, ""));
+
+/**
+ * The largest contract a chain will take, and where that figure came from.
+ *
+ * Three provenances, and the interface distinguishes all three. EVM chains are
+ * **measured**, by asking each one to size a deployment — which is why the
+ * table was wrong in both directions before anyone tried it. Non-EVM chains
+ * cannot be probed that way, so theirs are **published**: Near serves
+ * `max_contract_size` as a protocol parameter and Cardano serves `max_tx_size`,
+ * both read live; Solana, Stellar, Algorand and Aptos are documented constants.
+ * And an EVM chain whose RPC refused the probe falls back to EIP-170, which is
+ * **assumed** — a default presented as a finding is exactly how the old
+ * Arbitrum entry came to be wrong.
+ */
+function contractSizeOf(
+  name: string,
+  vm: string | null,
+  execution: ExecutionMeter | null,
+): Pick<
+  DeveloperMetrics,
+  | "contractSizeLimit"
+  | "contractSizeSource"
+  | "contractSizeBasis"
+  | "contractSizeNote"
+> {
+  // The chain's own live answer wins over anything written down.
+  if (execution?.codeSizeLimit != null) {
+    return {
+      contractSizeLimit: execution.codeSizeLimit,
+      contractSizeSource: "published",
+      contractSizeBasis: name === "Cardano" ? "transaction" : "code",
+      contractSizeNote:
+        name === "Cardano"
+          ? "max_tx_size from the epoch's parameters. A Plutus script arrives inside a transaction, so this bounds a deployment rather than the code itself."
+          : "max_contract_size, a protocol parameter served by the chain.",
+    };
+  }
+
+  const curated = CODE_SIZE_LIMIT[name];
+  if (curated) {
+    return {
+      contractSizeLimit: curated.bytes,
+      contractSizeSource: "published",
+      contractSizeBasis: curated.basis,
+      contractSizeNote: curated.note,
+    };
+  }
+
+  if (!isEvm(vm)) {
+    return {
+      contractSizeLimit: null,
+      contractSizeSource: null,
+      contractSizeBasis: null,
+      contractSizeNote: null,
+    };
+  }
+
+  const measured = CONTRACT_SIZE_LIMIT[name];
+  return {
+    contractSizeLimit: measured ?? EIP170_LIMIT,
+    contractSizeSource: measured === undefined ? "assumed" : "measured",
+    contractSizeBasis: "code",
+    contractSizeNote:
+      measured === undefined
+        ? "EIP-170's default, assumed: this chain's public RPC refused the probe."
+        : "Measured against this chain.",
+  };
+}
+
+/**
+ * What the execution price comes to in money, for one simple operation.
+ *
+ * Null rather than wrong wherever the ticker is not one of the 85 — Gnosis
+ * charges in xDAI — or where the chain's own denomination convention makes the
+ * exponent a guess, which is why the Cosmos chains publish a price here and no
+ * dollar figure.
+ */
+function usdOf(
+  execution: ExecutionMeter | null,
+  symbol: string | null,
+  priceBySymbol: ReadonlyMap<string, number>,
+): number | null {
+  const native = execution?.referenceNative ?? null;
+  if (native === null || !symbol) return null;
+  const price = priceBySymbol.get(symbol.toUpperCase()) ?? null;
+  return price !== null && price > 0 ? native * price : null;
+}
 
 /**
  * One execution meter, from whichever half of the app knows it.
@@ -126,8 +246,9 @@ function executionOf(
 ): ExecutionMeter | null {
   if (meter) return meter;
   if (!gas) return null;
+  const gwei = gas.gasPriceGwei;
   return {
-    price: gas.gasPriceGwei,
+    price: gwei,
     // Read as written by the table, which switches this to wei for the chains
     // quoting single digits of a gwei.
     priceLabel: "gwei",
@@ -139,6 +260,13 @@ function executionOf(
     // find out" rather than "there is no ceiling".
     limitUncapped: gas.limitIsSentinel,
     usedPct: gas.gasUsedPct,
+    // 21,000 gas is the intrinsic cost of a value transfer in the yellow
+    // paper — not an estimate, and not a request either: it is arithmetic on
+    // a reading already taken.
+    referenceNative: gwei === null ? null : (gwei * EVM_TRANSFER_GAS) / 1e9,
+    referenceLabel: "a transfer",
+    referenceBasis: `${EVM_TRANSFER_GAS.toLocaleString("en-GB")} gas, the EVM's intrinsic cost of a transfer`,
+    codeSizeLimit: null,
     source: "the chain's own node",
   };
 }
@@ -159,6 +287,27 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
     name: chain.name,
     chainId: chainIdByName.get(chain.keys.llamaName ?? chain.name) ?? null,
   }));
+
+  /*
+   * Ticker to price, built from the universe this app already prices.
+   *
+   * It is how an ETH-settled rollup's gas gets an ETH price without adding a
+   * market source: Ethereum is in the universe, so "ETH" resolves. Where two
+   * chains share a ticker the first wins, which in a universe ranked by TVL is
+   * the larger one — and no two of the 85 collide today.
+   */
+  const priceBySymbol = new Map<string, number>();
+  for (const chain of chains) {
+    const symbol = chain.symbol?.toUpperCase();
+    const price = chain.metrics.price;
+    if (symbol && price !== null && price > 0 && !priceBySymbol.has(symbol)) {
+      priceBySymbol.set(symbol, price);
+    }
+  }
+
+  // Which token each EVM chain charges gas in, from the same registry the RPC
+  // endpoints come from — so it costs no extra request.
+  const registry = await settle("rpc:registry", fetchRpcRegistry());
 
   const [gas, developers, decentralisation, proposals, tech, meters] =
     await Promise.all([
@@ -181,6 +330,18 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
   const rows: DeveloperMetrics[] = chains.map((chain) => {
     const fromL2Beat = tech?.[normaliseChainName(chain.name)];
     const reading = gas?.[chain.name] ?? null;
+    const execution = executionOf(reading, meters?.[chain.name] ?? null);
+    const chainId =
+      chainIdByName.get(chain.keys.llamaName ?? chain.name) ?? null;
+    /*
+     * Priced in the token **gas is paid in**, which is not always the chain's
+     * own: every ETH-settled rollup charges in ETH while its governance token
+     * trades separately. Pricing Arbitrum's gas in ARB read $0.00000007 for a
+     * transfer against a true $0.001 — four orders of magnitude cheap, in the
+     * direction that puts a chain at the top of a cheapest-first ranking.
+     */
+    const gasSymbol =
+      chainId === null ? null : (registry?.[chainId]?.symbol ?? null);
 
     /*
      * Three ways to know the virtual machine, best evidence first.
@@ -210,16 +371,10 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
             : null,
       stack: fromL2Beat?.stack ?? [],
       stage: fromL2Beat?.stage ?? null,
-      contractSizeLimit: isEvm(vm)
-        ? (CONTRACT_SIZE_LIMIT[chain.name] ?? EIP170_LIMIT)
-        : null,
-      contractSizeSource: !isEvm(vm)
-        ? null
-        : CONTRACT_SIZE_LIMIT[chain.name] !== undefined
-          ? "measured"
-          : "assumed",
+      ...contractSizeOf(chain.name, vm, execution),
       gas: reading,
-      execution: executionOf(reading, meters?.[chain.name] ?? null),
+      execution,
+      executionUsd: usdOf(execution, gasSymbol ?? chain.symbol, priceBySymbol),
       developers: developers?.[chain.name] ?? null,
       decentralisation: decentralisation?.[chain.name] ?? null,
       proposals: proposals?.[chain.name] ?? null,
@@ -242,6 +397,7 @@ export async function getDeveloperDataset(): Promise<DeveloperDataset> {
       executionLimit: rows.filter((r) => r.execution?.blockLimit != null)
         .length,
       contractSize: rows.filter((r) => r.contractSizeLimit != null).length,
+      executionUsd: rows.filter((r) => r.executionUsd != null).length,
       contractSizeMeasured: rows.filter(
         (r) => r.contractSizeSource === "measured",
       ).length,
