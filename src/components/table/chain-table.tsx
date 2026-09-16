@@ -477,15 +477,27 @@ export function ChainTable({
       {
         key: "gasPrice",
         label: "Gas price",
-        hint: "What one unit of execution costs, in whatever the chain meters — gas on an EVM chain, a compute unit on Solana, a virtual byte on Bitcoin. Each figure carries its own unit.",
+        hint: "What one unit of execution costs, in whatever the chain meters — gas on an EVM chain, a compute unit on Solana, a virtual byte on Bitcoin. Sorts on the dollar figure beneath it, which is the only comparable part; a chain without one is unranked and sinks to the bottom.",
         term: "gasPrice",
         group: "universal",
         align: "right",
         width: 168,
-        // Sorted on the dollar figure where there is one, because that is the
-        // comparable quantity — a price per unit is only comparable to itself.
-        value: (_chain, dev) =>
-          dev?.executionUsd ?? dev?.execution?.price ?? null,
+        /*
+         * The dollar figure and nothing else.
+         *
+         * Falling back to the per-unit price was the obvious thing to write and
+         * it is meaningless — it ranks quantities that share no unit. Measured
+         * before it was removed: sorting cheapest-first put **Gnosis Chain
+         * second**, between two chains at $0.0000000054 and $0.000000015,
+         * because its price is "11 wei" and 1.1e-8 happens to fall between
+         * them. It is not cheap or dear; it is not priced, because xDAI is not
+         * one of the 85 and there is nothing to convert through.
+         *
+         * So a chain without a dollar figure is **unranked**: it sinks with the
+         * rest of the missing data rather than being given a position it has
+         * not earned.
+         */
+        value: (_chain, dev) => dev?.executionUsd ?? null,
         render: (_chain, { dev }) => (
           <ExecutionPrice meter={dev?.execution} usd={dev?.executionUsd} />
         ),
@@ -967,7 +979,7 @@ function ExecutionPrice({
         }
       >
         {usd == null
-          ? "\u00A0"
+          ? "not priced"
           : `${formatFeeUsd(usd)} ${meter.referenceLabel}`}
       </span>
     </span>

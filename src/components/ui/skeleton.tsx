@@ -50,14 +50,32 @@ import { cn } from "~/lib/cn";
  * follows the line boxes — which is also what makes a multi-line placeholder
  * look like a paragraph rather than a rectangle.
  *
- * `className` must carry the same text size as the content it replaces, and
- * `children` a string of about the same length.
+ * `className` must carry the same text size as the content it replaces. For a
+ * single line give it a width and nothing else; for a paragraph, where the
+ * number of lines depends on where the text wraps, give it `chars`.
+ *
+ * ## What must not go in one
+ *
+ * **Never data.** The first version of this passed real-looking strings to get
+ * the metrics right — a chain name, a coverage sentence, a concentration
+ * percentage — and that put a hard-coded "Ethereum" in a component that serves
+ * eighty-five chains, and fabricated statistics like "42 chains answered a
+ * node directly" into the DOM of a page whose whole argument is that its
+ * numbers are real. Neither was visible, and neither should have been written.
+ *
+ * `chars` exists so the metrics can be right without inventing anything.
+ * Static interface copy that will genuinely render in that spot — a column
+ * heading, a button's label — is still fine as `children`, because it is not a
+ * claim about any chain.
  */
 export function SkeletonPhrase({
   className,
+  chars,
   children,
 }: {
   className?: string;
+  /** Roughly how much text this stands in for. Drives wrapping, not width. */
+  chars?: number;
   children?: React.ReactNode;
 }) {
   return (
@@ -68,9 +86,39 @@ export function SkeletonPhrase({
         className,
       )}
     >
-      {children ?? "\u00A0"}
+      {children ?? (chars ? filler(chars) : "\u00A0")}
     </span>
   );
+}
+
+/**
+ * Word lengths for the filler, cycled.
+ *
+ * Varied, because the point of giving a placeholder text at all is that it
+ * breaks across lines where the real sentence will, and a run of equal-length
+ * words wraps more regularly than prose does. Fixed rather than random so the
+ * server and the client produce the same string.
+ */
+const FILLER_WORDS = [5, 3, 8, 4, 9, 6, 3, 7, 5, 4];
+
+/**
+ * `chars` characters of nothing, in word-like runs.
+ *
+ * "x" rather than a space or an invisible glyph: it is in every font, it is
+ * about the width of an average letter, and if the stylesheet ever failed to
+ * load the placeholder would read as obvious nonsense rather than as a
+ * sentence someone might believe.
+ */
+function filler(chars: number): string {
+  let out = "";
+  let index = 0;
+  while (out.length < chars) {
+    const word = FILLER_WORDS[index % FILLER_WORDS.length]!;
+    const take = Math.min(word, chars - out.length);
+    out += (out.length > 0 ? " " : "") + "x".repeat(take);
+    index += 1;
+  }
+  return out;
 }
 
 /** One block. `className` carries the size — there is no default height. */

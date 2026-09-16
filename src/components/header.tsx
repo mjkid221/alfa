@@ -185,6 +185,13 @@ function useCondensed(): boolean {
 }
 
 /**
+ * The links' natural width: a 1px divider with 6px either side, then two 28px
+ * marks. Measured rather than derived, and asserted in the same breath — if the
+ * marks ever change size this number is the thing that will be wrong.
+ */
+const SOCIAL_WIDTH = 69;
+
+/**
  * Where the project lives, shown only at the top of the page.
  *
  * These are the least urgent things in the bar, so they get the space only
@@ -192,17 +199,41 @@ function useCondensed(): boolean {
  * zero width and fade, which keeps the condensed header to what a reader
  * scrolling a ranking actually needs.
  *
- * Collapsed means **unmounted**, not merely invisible. Two earlier attempts
- * were not enough: a zero-width link with `opacity: 0` still takes keyboard
- * focus, and collapsing the wrapper to `max-w-0` left the `shrink-0` links
- * laid out past the viewport, adding 31px to the document's scrollable width —
- * a horizontal scrollbar on every condensed header at `xl` and above, which
- * `overflow: clip` did not remove either. Removing them from the tree is the
- * only version with no overflow and no stray focus target, and the footer
- * carries the same two links for anyone who has scrolled past.
+ * ## Collapsing them without unmounting them
  *
- * The cost is the fade: they appear and disappear rather than easing. The bar's
- * padding still animates, so the change still reads as the header tightening.
+ * Two earlier attempts failed, and the third was to unmount: a zero-width link
+ * with `opacity: 0` still takes keyboard focus, and collapsing the wrapper to
+ * `max-w-0` left the `shrink-0` links laid out past the viewport, adding 31px
+ * to the document's scrollable width — a horizontal scrollbar on every
+ * condensed header at `xl` and above, which `overflow: clip` did not remove
+ * either. Unmounting fixed both and cost the animation: the links appeared and
+ * vanished rather than easing.
+ *
+ * They ease now, and the two problems stay fixed by different means.
+ * **`overflow: hidden`, not `clip`** — hidden establishes a scroll container,
+ * so the overflowing links are contained by it instead of extending the
+ * document; clip only paints less. And **`inert`**, which React 19 passes
+ * through: while collapsed the links leave the tab order and the accessibility
+ * tree entirely, which is the part unmounting was really buying.
+ *
+ * **`min-w-0` is load-bearing too**, for the third time in this codebase. A flex
+ * item's automatic minimum size is its content, so `width: 0` alone left this
+ * sitting at its full 69px with the links merely clipped — the bar looked
+ * unchanged and nothing animated.
+ *
+ * **`relative` is load-bearing**, and its absence is almost certainly what sank
+ * the `max-w-0` attempt. Each link carries an `sr-only` label, and `sr-only` is
+ * `position: absolute` — so without a positioned ancestor here its containing
+ * block is a `div` far up the tree, it escapes this element's clipping
+ * entirely, and it lands 31px past the viewport. That one hidden pixel of text
+ * was the horizontal scrollbar: the document measured 1,471px inside 1,440.
+ *
+ * `width` rather than `max-width` because the animation should run over the
+ * whole distance — `max-width` spends its first frames closing a gap between
+ * the cap and the content that was never visible.
+ *
+ * Reduced motion needs nothing here: the global rule collapses every transition
+ * duration, so the links snap the way they used to.
  *
  * Hidden below `xl` regardless, and that breakpoint was measured rather than
  * guessed: at `lg` these 69px tipped the bar onto a second row from 1100 to
@@ -211,10 +242,18 @@ function useCondensed(): boolean {
  * Below `xl` the footer is the place for them.
  */
 function SocialLinks({ condensed }: { condensed: boolean }) {
-  if (condensed) return null;
-
   return (
-    <span className="hidden items-center xl:flex">
+    <span
+      className="relative hidden min-w-0 shrink-0 items-center overflow-hidden xl:flex"
+      style={{
+        width: condensed ? 0 : SOCIAL_WIDTH,
+        opacity: condensed ? 0 : 1,
+        transitionProperty: "width, opacity",
+        transitionDuration: "var(--dur-standard)",
+        transitionTimingFunction: "var(--ease-emphasised)",
+      }}
+      inert={condensed}
+    >
       <span className="bg-hairline mx-1.5 h-4 w-px shrink-0" aria-hidden />
       {[
         { ...SOCIAL.github, Mark: GitHubMark },

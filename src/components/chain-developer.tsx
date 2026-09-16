@@ -573,18 +573,21 @@ export function ChainDeveloperView({
                       </p>
                       <p className="tnum text-ink-secondary mt-0.5 text-[12px]">
                         {live.block === null ? (
-                          <SkeletonPhrase className="text-[12px]">
-                            Block 000,000,000
-                          </SkeletonPhrase>
+                          <SkeletonPhrase className="w-28 text-[12px]" />
                         ) : (
                           `Block ${formatInteger(live.block)}`
                         )}
                       </p>
                       <p className="text-ink-faint text-[11px] leading-snug">
                         {live.block === null ? (
-                          <SkeletonPhrase className="text-[11px] leading-snug">
-                            proposer not registered under a published address
-                          </SkeletonPhrase>
+                          // A width, not the sentence — saying "proposer not
+                          // registered" before a block has arrived would be
+                          // asserting something about this chain to hold a
+                          // space open.
+                          <SkeletonPhrase
+                            className="text-[11px] leading-snug"
+                            chars={48}
+                          />
                         ) : live.place ? (
                           `proposed from ${live.place.city ?? live.place.country ?? "an unnamed place"}`
                         ) : (

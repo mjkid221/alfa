@@ -368,9 +368,7 @@ export function NodeGlobePanel({ className }: { className?: string }) {
             */}
             {chain === "Monad" && live.block === null && (
               <p className="text-[11px]">
-                <SkeletonPhrase className="text-[11px]">
-                  LIVE Block 000,000,000 · reading the chain
-                </SkeletonPhrase>
+                <SkeletonPhrase className="text-[11px]" chars={42} />
               </p>
             )}
             {live.block !== null && (
@@ -454,16 +452,14 @@ export function GlobeSkeleton() {
       */}
       <div className="space-y-3" aria-hidden>
         <div>
-          <SkeletonPhrase className="text-[10.5px] tracking-wide uppercase">
-            validators
-          </SkeletonPhrase>
+          {/* The unit is per chain — validators, council nodes, staked nodes
+              — so this is a width rather than a word. */}
+          <SkeletonPhrase className="w-16 text-[10.5px] tracking-wide uppercase" />
           <p className="mt-0.5">
             <SkeletonPhrase className="w-20 text-[18px] font-medium" />
           </p>
           <p className="text-[11px] leading-snug">
-            <SkeletonPhrase className="text-[11px] leading-snug">
-              across 100 locations
-            </SkeletonPhrase>
+            <SkeletonPhrase className="text-[11px] leading-snug" chars={20} />
           </p>
         </div>
 
@@ -505,9 +501,8 @@ export function GlobeSkeleton() {
             ))}
           </ul>
           <p className="mt-1.5 px-1.5 text-[11px] leading-snug">
-            <SkeletonPhrase className="text-[11px] leading-snug">
-              20% of placed validators sit with one provider.
-            </SkeletonPhrase>
+            {/* Not the real sentence with a made-up percentage in it. */}
+            <SkeletonPhrase className="text-[11px] leading-snug" chars={46} />
           </p>
         </div>
       </div>
@@ -657,21 +652,22 @@ export function DeveloperRail({
             ))}
           </ul>
         )}
-        {/* The same sentence either way, so it wraps to the same number of
-            lines and the panel does not resize when the count arrives. */}
-        {withGas > 0 ? (
-          <p className="text-ink-faint mt-3 text-[11px] leading-relaxed">
-            {withGas} chains answered a node directly, which is how most of
-            these were established rather than assumed.
-          </p>
-        ) : (
-          <p className="mt-3 text-[11px] leading-relaxed">
-            <SkeletonPhrase className="text-[11px]">
-              42 chains answered a node directly, which is how most of these
-              were established rather than assumed.
-            </SkeletonPhrase>
-          </p>
-        )}
+        {/*
+          The real sentence either way, with only the count painted over — so
+          it wraps identically at every width and the panel does not resize
+          when the figure arrives. The earlier version reserved the height by
+          writing out the whole sentence with "42" in it, which is a coverage
+          claim nobody had checked sitting in the DOM to hold a space open.
+        */}
+        <p className="text-ink-faint mt-3 text-[11px] leading-relaxed">
+          {withGas > 0 ? (
+            withGas
+          ) : (
+            <SkeletonPhrase className="w-5 text-[11px]" />
+          )}{" "}
+          chains answered a node directly, which is how most of these were
+          established rather than assumed.
+        </p>
       </Panel>
 
       {/*
@@ -863,9 +859,7 @@ export function DeveloperSources({
               {source.covered === null || universe === null ? (
                 // The one genuinely unknown cell. Painted over at the width the
                 // real figure will take, so nothing reflows when it lands.
-                <SkeletonPhrase className="text-[12px]">
-                  42 of 85
-                </SkeletonPhrase>
+                <SkeletonPhrase className="w-14 text-[12px]" />
               ) : (
                 `${source.covered} of ${universe}`
               )}

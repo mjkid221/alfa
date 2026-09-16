@@ -418,6 +418,24 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   the log still showed the procedure running and the dehydrated payload simply
   had no such key. It lives in `lib/globe-chains.ts` now. Check the dehydrated
   keys in the HTML when a prefetch appears to run and does not land.
+- **A skeleton must never contain data.** `SkeletonPhrase` reserves space by
+  laying text out, and the first version reached for real-looking strings to get
+  the metrics right — which put a hard-coded `"Ethereum"` in a component that
+  serves 85 chains, and sentences like `"42 chains answered a node directly"`
+  and `"20% of placed validators sit with one provider"` into the DOM of a page
+  whose whole argument is that its numbers are real. Invisible is not the same
+  as absent. Pass `chars` for neutral filler instead; static interface copy that
+  genuinely renders in that spot (a column heading, a button's label) is still
+  fine, because it is not a claim about any chain. Better still, render the real
+  sentence and paint over only the figure — that is what the virtual-machine
+  panel's note and the sources panel's counts do.
+- **Do not sort two different units in one column.** The gas column falls back
+  to nothing: it ranks on the dollar figure and leaves a chain without one
+  unranked. Ranking on the per-unit price when the dollars were missing put
+  **Gnosis Chain second-cheapest** of 85, because its price is "11 wei" and
+  1.1e-8 sorts neatly between $0.0000000054 and $0.000000015. The comment above
+  the code said "a price per unit is only comparable to itself" while the code
+  did the opposite.
 - **`SkeletonPhrase` reserves text by laying the text out, not by sizing a bar.**
   A row of 11.5px text is 17.25px because of its line-height, and a `h-3` bar
   guessing at it is 5.25px short every row — 72px over the seven rows of the
@@ -466,6 +484,20 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   header splits. Narrowing the VM filter to a non-EVM family drops the EVM block
   outright rather than printing four columns of "n/a" at a reader who just asked
   for Cosmos chains.
+- **The header's social links animate out; they used to be unmounted.** Three
+  things had to be true at once, and the docblock records which earlier attempt
+  each one killed. `overflow: hidden`, not `clip` — hidden establishes a scroll
+  container so the overflowing links stop extending the document. `inert`, which
+  React 19 passes through, so they leave the tab order and the accessibility
+  tree while collapsed. And **`relative`**, because each link carries an
+  `sr-only` label and `sr-only` is `position: absolute` — without a positioned
+  ancestor its containing block is a div near the root, it escapes the clipping
+  entirely, and one hidden pixel of text lands 31px past the viewport. That was
+  the horizontal scrollbar: 1,471px inside 1,440.
+- **`min-w-0` was load-bearing there too** — a flex item's automatic minimum
+  size is its content, so `width: 0` alone left the wrapper at its full 69px
+  with the links merely clipped, and nothing appeared to animate. Third time
+  this constraint has bitten in this codebase.
 - A canvas sized in pixels inside a grid item deadlocks on resize: the item's
   `min-width: auto` is the canvas's own width, so `useMeasure` keeps reporting
   the old size and it never shrinks. `NodeGlobe`'s wrapper needs `min-w-0`, and
