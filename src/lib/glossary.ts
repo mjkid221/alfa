@@ -294,6 +294,15 @@ export const GLOSSARY = {
       "Ethereum 7,457 · Solana 2,321 · Base 1,176 · Monad 175, as of September 2026.",
   },
 
+  transferCost: {
+    title: "Transfer cost",
+    short:
+      "What it costs to move the native token once, in dollars — the one cost figure that means the same thing on every chain.",
+    long: "Gas price does not travel. Gwei is an Ethereum accounting unit: Solana charges per signature, Bitcoin per virtual byte, Ripple a flat count of drops, and Hedera publishes its fee schedule in US cents. Even between two EVM chains the number says nothing about cost until it is multiplied by gas and by a token price — 9 wei on Gnosis Chain against 1,110 gwei on Hedera is not a comparison.\n\n**So this is the comparable number instead: one simple transfer of the chain's own token, priced.** Most of it is exact. On an EVM chain a value transfer costs 21,000 gas by the specification, so the figure is that times the gas price read from the chain. Ripple, Stellar, Algorand and MultiversX each publish a flat minimum. Near's transfer cost is a protocol parameter. Solana's is 5,000 lamports for the one signature a transfer carries.\n\nTwo chains need a transaction size, and those carry an asterisk: Bitcoin is quoted for a 141-byte one-input two-output native segwit spend at the current half-hour rate, and Cardano for a 280-byte payment against the epoch's live fee coefficients.\n\n**It is priced in the token gas is actually paid in**, which is not always the chain's own — every ETH-settled rollup charges in ETH while its governance token trades separately. Pricing Arbitrum's gas in ARB read $0.00000007 against a true $0.001.\n\nAbsent for Tron, whose transfers are free inside a daily bandwidth allowance; for Cosmos chains, where the minimum gas price is a validator's choice rather than the chain's; and for Aptos, Sui, Tezos, TON and Stacks, which publish no protocol minimum to quote.",
+    formula:
+      "The chain's minimum fee for one native transfer, multiplied by the price of the token that fee is paid in.",
+  },
+
   nakamoto: {
     title: "Nakamoto coefficient",
     short:

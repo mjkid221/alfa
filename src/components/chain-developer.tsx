@@ -19,9 +19,11 @@ import { ChainAvatar, Panel } from "~/components/ui/primitives";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
+  formatFeeUsd,
   formatGasWithUnit,
   formatInteger,
   formatPercent,
+  formatPrice,
 } from "~/lib/format";
 import { GLOBE_CHAINS } from "~/lib/globe-chains";
 import { api } from "~/trpc/react";
@@ -119,10 +121,11 @@ export function ChainDeveloper({
 
   if (!dev) return null;
 
-  const { gas, developers, decentralisation, proposals } = dev;
+  const { gas, transferCost, developers, decentralisation, proposals } = dev;
   const hasAnything =
     dev.vm ??
     gas ??
+    transferCost ??
     developers ??
     decentralisation ??
     proposals ??
@@ -183,37 +186,59 @@ export function ChainDeveloper({
         </Section>
 
         {/* --------------------------------------------------------- gas --- */}
-        {gas && (
+        {(gas ?? transferCost) && (
           <Section title="What it charges">
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-3">
-              <Figure
-                label="Gas price"
-                term="gasPrice"
-                value={formatGasWithUnit(gas.gasPriceGwei)}
-                note={`read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`}
-              />
-              <Figure
-                label="Block gas limit"
-                term="gasLimit"
-                value={
-                  gas.gasLimit
-                    ? formatCount(gas.gasLimit)
-                    : gas.limitIsSentinel
-                      ? "No cap"
-                      : "—"
-                }
-                note={
-                  gas.limitIsSentinel
-                    ? "this chain does not bound a block"
-                    : undefined
-                }
-              />
-              {gas.gasUsedPct !== null && (
+              {/* First, because it is the figure that survives leaving the EVM
+                  — a Bitcoin or Solana page has this and nothing else in the
+                  section. */}
+              {transferCost && (
                 <Figure
-                  label="Last block"
-                  value={formatPercent(gas.gasUsedPct, { signed: false })}
-                  note="of the gas limit used"
+                  label="One transfer"
+                  term="transferCost"
+                  value={
+                    transferCost.usd === null
+                      ? `${formatPrice(transferCost.native)} ${transferCost.symbol ?? ""}`.trim()
+                      : formatFeeUsd(transferCost.usd)
+                  }
+                  note={`${transferCost.exact ? "" : "about "}${transferCost.basis}`}
                 />
+              )}
+              {/* Everything below is an EVM reading. A Bitcoin or Solana page
+                  shows the transfer cost above and stops there, rather than
+                  printing three dashes under EVM labels. */}
+              {gas && (
+                <>
+                  <Figure
+                    label="Gas price"
+                    term="gasPrice"
+                    value={formatGasWithUnit(gas.gasPriceGwei)}
+                    note={`read from ${gas.via === "alchemy" ? "an Alchemy node" : "a public node"}`}
+                  />
+                  <Figure
+                    label="Block gas limit"
+                    term="gasLimit"
+                    value={
+                      gas.gasLimit
+                        ? formatCount(gas.gasLimit)
+                        : gas.limitIsSentinel
+                          ? "No cap"
+                          : "—"
+                    }
+                    note={
+                      gas.limitIsSentinel
+                        ? "this chain does not bound a block"
+                        : undefined
+                    }
+                  />
+                  {gas.gasUsedPct !== null && (
+                    <Figure
+                      label="Last block"
+                      value={formatPercent(gas.gasUsedPct, { signed: false })}
+                      note="of the gas limit used"
+                    />
+                  )}
+                </>
               )}
             </div>
           </Section>

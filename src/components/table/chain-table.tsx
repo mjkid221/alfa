@@ -21,9 +21,10 @@ import type { GlossaryTerm } from "~/lib/glossary";
 import { cn } from "~/lib/cn";
 import {
   formatCount,
+  formatFeeUsd,
   formatGas,
-  formatInteger,
   formatGasWithUnit,
+  formatInteger,
   formatMultiple,
   formatPercent,
   formatSigned,
@@ -64,6 +65,7 @@ type SortKey =
   | "gasUsedPct"
   | "devs"
   | "nakamoto"
+  | "transferCost"
   | "vm"
   | "contractSize"
   | "stage";
@@ -440,6 +442,46 @@ export function ChainTable({
           ) : (
             <Missing />
           ),
+      },
+      {
+        key: "transferCost",
+        label: "Transfer",
+        hint: "What one simple transfer of the native token costs, in dollars. The one cost figure that means the same thing on every chain — hover a cell for what was counted.",
+        term: "transferCost",
+        group: "universal",
+        align: "right",
+        width: 128,
+        value: (_chain, dev) => dev?.transferCost?.usd ?? null,
+        render: (_chain, { dev }) => {
+          const cost = dev?.transferCost;
+          if (!cost) return <Missing />;
+          if (cost.usd === null) {
+            // The fee is known and the token is not priced here — Gnosis
+            // charges in xDAI, which is not one of the 85. Saying so beats a
+            // dash, which would claim the fee itself could not be read.
+            return (
+              <span
+                className="text-ink-faint text-[11.5px]"
+                title={`${cost.native} ${cost.symbol ?? "tokens"} — ${cost.basis}. No price for ${cost.symbol ?? "this token"} in the universe, so it cannot be put in dollars.`}
+              >
+                no price
+              </span>
+            );
+          }
+          return (
+            <span
+              className="tnum text-[12.5px]"
+              title={`${cost.native} ${cost.symbol ?? ""} — ${cost.basis}. Source: ${cost.source}.`}
+            >
+              {formatFeeUsd(cost.usd)}
+              {!cost.exact && (
+                // Two chains need a transaction size assumed, and the figure
+                // says which it is rather than presenting all of them alike.
+                <span className="text-ink-faint ml-0.5 text-[10.5px]">*</span>
+              )}
+            </span>
+          );
+        },
       },
       {
         key: "devs",
@@ -1182,6 +1224,16 @@ function MobileDeveloperStats({ dev }: { dev?: DeveloperMetrics }) {
       <MobileStat
         label="Nakamoto"
         value={dev?.decentralisation?.nakamoto?.toString() ?? "—"}
+      />
+      <MobileStat
+        label="Transfer"
+        value={
+          dev?.transferCost
+            ? dev.transferCost.usd === null
+              ? "no price"
+              : formatFeeUsd(dev.transferCost.usd)
+            : "—"
+        }
       />
       {evm && (
         <>

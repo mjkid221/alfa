@@ -696,6 +696,12 @@ export function DeveloperSources({
       note: "Read live and cached for a minute. Chains with no reachable public node show nothing.",
     },
     {
+      what: "Cost of one transfer",
+      where: "Each chain's own minimum fee, priced in the token it is paid in",
+      covered: coverage.transferCostUsd,
+      note: "The one cost figure that is comparable across machines — gwei is not. Exact on every chain but Bitcoin and Cardano, where a transaction size is stated. Absent where fees are free inside an allowance (Tron) or set per validator (Cosmos).",
+    },
+    {
       what: "Block gas limit and fullness",
       where: "The same block the gas price came from",
       covered: coverage.gasLimit,

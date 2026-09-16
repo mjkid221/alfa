@@ -66,6 +66,39 @@ export function formatPrice(value: number | null | undefined): string {
   )}`;
 }
 
+/**
+ * A transaction fee in dollars, across the eleven orders of magnitude the
+ * universe actually spans.
+ *
+ * Measured 16 September 2026: a transfer costs $0.106 on Bitcoin and
+ * $0.0000017 on Stellar. `formatPrice` is the wrong tool — it holds four
+ * significant figures, which reads "$0.0000017000" at the cheap end and buries
+ * the number in zeros. Two is what a reader compares on; a third would be
+ * noise on a figure that moves with a token price.
+ *
+ * Sub-cent fees are the norm rather than the exception here, so there is no
+ * special case for them — the whole range is written the same way, with
+ * tabular numerals doing the aligning.
+ */
+export function formatFeeUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (value === 0) return "$0";
+  const abs = Math.abs(value);
+
+  if (abs >= 0.01) {
+    return `$${abs.toFixed(abs >= 1 ? 2 : 3)}`;
+  }
+  // Two significant figures wherever the leading zeros end: one decimal past
+  // the first non-zero digit, which `1 - floor(log10)` counts. `toFixed` is
+  // what keeps it out of the exponent form `toPrecision` reaches for below
+  // 1e-7, and the trailing zero it can leave is trimmed — "$0.0050" claims a
+  // precision this figure does not have.
+  const decimals = Math.min(12, 1 - Math.floor(Math.log10(abs)));
+  return `$${abs.toFixed(decimals).replace(/0+$/, "")}`;
+}
+
 /** A gas price and the unit it is quoted in. */
 export interface GasFigure {
   /** The number alone, already separated and rounded. "—" when unknown. */

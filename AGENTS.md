@@ -282,6 +282,43 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   "Amazon.com" 2, so "32% with one provider" should have read **52%**.
   `normaliseHost` folds the hyperscalers by hand and strips legal suffixes;
   extend `HOST_ALIASES` rather than inventing a cleverer rule.
+- **"Gas price for non-EVM chains" is the wrong question; transfer cost is the
+  right one.** Gwei is an Ethereum accounting unit — Solana charges per
+  signature, Bitcoin per virtual byte, Ripple a flat drop count, Hedera in US
+  cents — and even between two EVM chains it says nothing until multiplied by
+  gas and a token price. `sources/transfer-cost.ts` answers the portable
+  version instead: **what one native transfer costs, in dollars**, for 50
+  chains, 45 of them priced. Exact on all but two: an EVM transfer is 21,000
+  gas by the specification (so the EVM half needs no request at all, just the
+  gas price already being read); Ripple, Stellar, Algorand and MultiversX
+  publish flat minimums; Near's transfer cost is a *protocol parameter*
+  (`EXPERIMENTAL_protocol_config`, receipt creation + transfer, doubled for
+  send and execute); Solana's is 5,000 lamports for one signature. Bitcoin
+  (141 vB, one-in two-out segwit) and Cardano (280 bytes against live
+  `min_fee_a`/`min_fee_b`) state their assumed size and carry an asterisk.
+- **The gas token is not always the chain's token, and pricing it wrong is a
+  four-order-of-magnitude error.** Every ETH-settled rollup charges gas in ETH
+  while its governance token trades separately: Arbitrum's transfer priced in
+  ARB read **$0.00000007 against a true $0.001** — and cheap in the flattering
+  direction, which a cheap-gas ranking would carry straight to the top.
+  `chainid.network`'s `nativeCurrency.symbol` is the authority and the RPC
+  registry now keeps it (`rpc:registry:v2`); the ticker is looked up against
+  the universe's own prices, so no market source was added. Where the ticker is
+  not in the 85 (Gnosis charges in xDAI) the cell reads "no price", never a
+  dash — the fee was read fine, only the conversion is missing.
+- **Fees deliberately absent, and why**: **Tron** transfers are *free* inside a
+  600-byte daily bandwidth allowance, so any number would be wrong for almost
+  everyone; **Cosmos** minimum gas prices are a validator's choice, not the
+  chain's, and Osmosis returns an empty string for it; **Aptos** publishes the
+  gas price but not what a transfer uses, and 100 consecutive mainnet
+  transactions held no plain transfer to measure; **Sui** is the JSON-RPC
+  again; **Tezos, TON and Stacks** price by client convention rather than a
+  protocol minimum.
+- **`formatFeeUsd`, not `formatPrice`, for fees.** The universe spans $0.106 on
+  Bitcoin to $0.0000017 on Stellar. `formatPrice` holds four significant
+  figures, which writes "$0.0000017000"; fees get two, one decimal past the
+  first non-zero digit, with the trailing zero trimmed because "$0.0050" claims
+  a precision the figure has not got.
 - **The 2^50 gas limit is a class, not an Arbitrum quirk.** Six chains return
   exactly `0x4000000000000` — Arbitrum, zkSync Era, Abstract, Etherlink, Reya
   and Robinhood Chain — which is Arbitrum Nitro and the zkSync stack. They carry

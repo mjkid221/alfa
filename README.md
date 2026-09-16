@@ -566,6 +566,7 @@ a filter by virtual machine. None of it feeds the score.
 
 | What | Where from | Covers |
 |---|---|---|
+| Cost of one transfer | Each chain's own minimum fee, priced | 50 of 85, 45 in dollars |
 | Gas price | The chain's own node, via public RPC | 42 of 85 |
 | Block gas limit and fullness | The same block the price came from | 36 of 85 |
 | Contract size limit | Measured against each chain | 48 of 85, 39 measured |
@@ -663,6 +664,33 @@ one company owns the hardware — Hedera's 25 council nodes sit in seven countri
 and 52% of them are at Amazon. That figure needed the provider names folding
 first: the same company came back as "Amazon Technologies Inc.", "Amazon.com,
 Inc." and "Amazon.com", which had been quietly reporting 32%.
+
+**Gas price does not survive leaving the EVM, so there is a figure that does.**
+Gwei is an Ethereum accounting unit: Solana charges per signature, Bitcoin per
+virtual byte, Ripple a flat count of drops, and Hedera publishes its fee
+schedule in US cents. Even between two EVM chains the number says nothing about
+cost until it is multiplied by gas and a token price. So beside it sits **what
+one simple transfer costs, in dollars** — the same question asked of every
+chain, and answered for 50 of them.
+
+Most of it is exact rather than estimated. An EVM value transfer costs 21,000
+gas by the specification, so that half is arithmetic on a reading already being
+taken. Ripple, Stellar, Algorand and MultiversX each publish a flat minimum;
+Near's transfer cost is a protocol parameter; Solana's is 5,000 lamports for the
+one signature a transfer carries. Two chains need a transaction size and say so
+with an asterisk: Bitcoin at 141 virtual bytes for a one-input two-output native
+segwit spend, Cardano at 280 bytes against the epoch's live fee coefficients.
+
+It is priced in the token **gas is actually paid in**, which is not always the
+chain's own — every ETH-settled rollup charges in ETH while its governance token
+trades separately. Pricing Arbitrum's gas in ARB read $0.00000007 for a transfer
+against a true $0.001, cheap by four orders of magnitude and in the direction
+that would have put it at the top of a cheapest-gas ranking.
+
+Some chains are left blank on purpose. Tron's transfers are free inside a daily
+bandwidth allowance, so any figure would be wrong for almost everybody. Cosmos
+chains set the minimum gas price per validator rather than per chain. Aptos
+publishes what gas costs but not what a transfer uses.
 
 **Not every column is a question every chain can answer, and the table says so.**
 Gas price, block gas limit, block fullness and contract size are EVM ideas, so
