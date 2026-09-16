@@ -189,6 +189,43 @@ export function buildGraticule(): { cache: Float32Array; runs: number[] } {
  * is then no centre to fly to, and pretending otherwise would pick one at
  * random.
  */
+/**
+ * How far the furthest point sits from a centre, in degrees of arc.
+ *
+ * Used to pick a zoom that actually fits a selection. A fixed zoom cannot:
+ * Finland's nodes span a couple of degrees and OVH's span a hundred and fifty,
+ * and the same 1.5× that frames the first shows the second as a wall of arcs
+ * running off every edge of the canvas.
+ *
+ * The 90th percentile rather than the maximum, so one outlier — the single
+ * Sydney machine a European provider happens to run — does not zoom the other
+ * forty-nine into a speck.
+ */
+export function angularSpread(
+  points: readonly NodePoint[],
+  centre: { lat: number; lon: number },
+): number {
+  if (points.length === 0) return 0;
+
+  const phi0 = centre.lat * RADIANS;
+  const cos0 = Math.cos(phi0);
+  const sin0 = Math.sin(phi0);
+
+  const angles = points
+    .map((point) => {
+      const phi = point.lat * RADIANS;
+      const delta = (point.lon - centre.lon) * RADIANS;
+      // Spherical law of cosines, clamped: rounding can push the dot product a
+      // hair outside [-1, 1] and `Math.acos` answers NaN for it.
+      const dot = sin0 * Math.sin(phi) + cos0 * Math.cos(phi) * Math.cos(delta);
+      return Math.acos(Math.min(1, Math.max(-1, dot))) / RADIANS;
+    })
+    .sort((a, b) => a - b);
+
+  const index = Math.min(angles.length - 1, Math.floor(angles.length * 0.9));
+  return angles[index]!;
+}
+
 export function centroidOf(
   points: readonly NodePoint[],
 ): { lat: number; lon: number } | null {

@@ -112,10 +112,26 @@ export const GLOBE_HEIGHT = 460;
 export function NodeGlobePanel({ className }: { className?: string }) {
   const [chain, setChain] = useState<string>("Bitcoin");
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [focus, setFocus] = useState<{ country: string; nonce: number } | null>(
-    null,
-  );
+  /**
+   * What the globe is turned to, if anything. One piece of state for both
+   * lists: a country row and a hosting row are the same gesture aimed at
+   * different groupings, and keeping two would let them disagree about which
+   * one the camera is actually showing.
+   */
+  const [focus, setFocus] = useState<{
+    kind: "country" | "host";
+    value: string;
+    nonce: number;
+  } | null>(null);
   const [host, setHost] = useState<string | null>(null);
+
+  /** Clicking the row already focused releases it; clicking another re-aims. */
+  const aim = (kind: "country" | "host", value: string) =>
+    setFocus((current) =>
+      current?.kind === kind && current.value === value
+        ? null
+        : { kind, value, nonce: (current?.nonce ?? 0) + 1 },
+    );
   const live = useLiveProposer(chain);
 
   const map = api.developer.nodeMap.useQuery(
@@ -232,25 +248,22 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                       <li key={row.country}>
                         <button
                           type="button"
-                          aria-pressed={focus?.country === row.country}
+                          aria-pressed={
+                            focus?.kind === "country" &&
+                            focus.value === row.country
+                          }
                           onMouseEnter={() => setHighlight(row.country)}
                           onMouseLeave={() => setHighlight(null)}
                           onFocus={() => setHighlight(row.country)}
                           onBlur={() => setHighlight(null)}
                           onClick={() => {
                             setHost(null);
-                            setFocus((current) =>
-                              current?.country === row.country
-                                ? null
-                                : {
-                                    country: row.country,
-                                    nonce: (current?.nonce ?? 0) + 1,
-                                  },
-                            );
+                            aim("country", row.country);
                           }}
                           className={cn(
                             "flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",
-                            focus?.country === row.country
+                            focus?.kind === "country" &&
+                              focus.value === row.country
                               ? "bg-raised text-ink"
                               : "hover:bg-raised text-ink-secondary",
                           )}
@@ -292,11 +305,17 @@ export function NodeGlobePanel({ className }: { className?: string }) {
                           type="button"
                           aria-pressed={host === row.host}
                           onClick={() => {
-                            setFocus(null);
                             setHighlight(null);
-                            setHost((current) =>
-                              current === row.host ? null : row.host,
-                            );
+                            const next = host === row.host ? null : row.host;
+                            setHost(next);
+                            // Selecting a provider now turns the globe to it as
+                            // well as lighting it. Before, the arcs were drawn
+                            // wherever the camera happened to be pointing —
+                            // which for a European provider was usually the
+                            // Pacific, so the one relationship this globe draws
+                            // was regularly drawn out of sight.
+                            if (next) aim("host", next);
+                            else setFocus(null);
                           }}
                           className={cn(
                             "flex w-full items-baseline gap-2 rounded-[6px] px-1.5 py-1 text-left text-[11.5px] transition-colors",

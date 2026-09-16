@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "~/lib/cn";
 import { formatCount } from "~/lib/format";
@@ -17,6 +24,7 @@ import {
   buildArcs,
   buildGraticule,
   buildPointCache,
+  angularSpread,
   centroidOf,
   clamp,
   flightDuration,
@@ -81,6 +89,25 @@ const HOME: Readonly<Camera> = {
 const SPIN = 6;
 /** Past ±90 the up-axis is undefined and the graticule inverts. */
 const PHI_LIMIT = 85;
+/**
+ * How much of the viewport a focused selection is allowed to fill.
+ *
+ * Below 1 so the outermost point of a country or a provider sits inside the
+ * sphere's rim rather than on it, where the orthographic foreshortening makes
+ * it unreadable anyway.
+ */
+const FIT_MARGIN = 0.82;
+/**
+ * The most a focus flight will zoom, however tight the selection.
+ *
+ * A fit-to-content zoom with no ceiling takes a single-city selection to the
+ * maximum, and at that point the sphere overflows the canvas in every
+ * direction: Finland's thirteen nodes filled the frame with no horizon, no
+ * coastline and no way to tell which part of the world was being shown. At
+ * 1.8× roughly a 33° radius stays visible, which for a European capital is the
+ * continent around it.
+ */
+const ZOOM_FIT_MAX = 1.8;
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 6;
 const ZOOM_STEP = 1.25;
@@ -193,10 +220,17 @@ export interface NodeGlobeProps {
    */
   highlightHost?: string | null;
   /**
-   * Turns the globe until this country is centred, and highlights it. Bump
+   * Turns the globe until a selection is centred, and highlights it. Bump
    * `nonce` to re-centre on a repeat click of the row already focused.
+   *
+   * `kind` decides what is being centred on. A country flies to its centre of
+   * mass; a hosting provider flies to the centre of mass of *its* locations,
+   * which is the answer to the question the host list raises and used to go
+   * unanswered — selecting OVH lit its points and drew its arcs wherever the
+   * globe happened to be pointing, which for a European provider was often the
+   * far side of the planet.
    */
-  focus?: { country: string; nonce: number } | null;
+  focus?: { kind: "country" | "host"; value: string; nonce: number } | null;
   /** The location under the pointer. Mouse only; touch has no hover. */
   onHoverPoint?: (point: NodePoint | null) => void;
   /** Fired when a drag, wheel or key takes the reader off the focused country. */
@@ -245,6 +279,34 @@ export function NodeGlobe({
     y: number;
   } | null>(null);
   const [live, setLive] = useState("");
+  /**
+   * Whether the reader *wants* the globe turning — not whether it is turning
+   * this instant.
+   *
+   * `spinRef` is the effective state and it goes false whenever the pointer is
+   * over the sphere, because a tooltip chasing a moving target is unreadable.
+   * Mirroring that into React would make the button flicker between play and
+   * pause as the pointer crossed the globe, which describes the mechanism
+   * rather than the setting. So this holds the intent, the button shows this,
+   * and the pointer handlers only touch the ref.
+   */
+  const [autoRotate, setAutoRotate] = useState(false);
+
+  /**
+   * Start or stop the idle rotation, and remember which the reader asked for.
+   *
+   * `taken` is the flag that tells the pointer-leave handler not to restart a
+   * globe the reader has deliberately stopped, so turning rotation *on* has to
+   * clear it — otherwise the button would start the globe and the next mouse
+   * exit would stop it again.
+   */
+  const setRotation = useCallback((next: boolean) => {
+    const wanted = next && !reducedRef.current;
+    takenRef.current = !wanted;
+    spinRef.current = wanted;
+    setAutoRotate(wanted);
+    engineRef.current?.schedule();
+  }, []);
 
   const cameraRef = useRef<Camera>({ ...HOME });
   const viewRef = useRef({ width: 0, height, baseRadius: 0 });
@@ -1011,7 +1073,8 @@ export function NodeGlobe({
   // and hovering a country row while one is selected should not silently
   // repaint the globe around the country instead.
   useEffect(() => {
-    const country = focus?.country ?? highlightCountry;
+    const country =
+      (focus?.kind === "country" ? focus.value : null) ?? highlightCountry;
     if (highlightHost) {
       const mask = new Uint8Array(points.length);
       points.forEach((point, index) => {
@@ -1026,7 +1089,14 @@ export function NodeGlobe({
       maskRef.current = null;
     }
     engineRef.current?.schedule();
-  }, [points, countryOf, highlightCountry, highlightHost, focus?.country]);
+  }, [
+    points,
+    countryOf,
+    highlightCountry,
+    highlightHost,
+    focus?.kind,
+    focus?.value,
+  ]);
 
   // Arcs. Rebuilt only when the provider changes, then rotated with the camera.
   useEffect(() => {
@@ -1062,27 +1132,57 @@ export function NodeGlobe({
     engineRef.current?.schedule();
   }, [points, highlightHost]);
 
-  // Focus. Turns the globe to the country's centre of mass.
+  // Focus. Turns the globe to the centre of mass of whatever was selected.
   useEffect(() => {
-    const country = focus?.country;
-    if (!country) {
+    if (!focus) {
       focusedRef.current = null;
       return;
     }
-    const indices = countryOf.get(country) ?? [];
-    const centre = centroidOf(indices.map((i) => points[i]!).filter(Boolean));
+    // A country's members are already indexed; a provider's are not, because
+    // nothing else needs that index and hosts are selected one at a time.
+    const members =
+      focus.kind === "country"
+        ? (countryOf.get(focus.value) ?? []).map((i) => points[i]!)
+        : points.filter((point) => point.host === focus.value);
+    const centre = centroidOf(members.filter(Boolean));
     if (!centre) return;
+    const indices = members;
 
-    focusedRef.current = country;
+    focusedRef.current = focus.value;
     const camera = cameraRef.current;
+    // Flying somewhere is taking control, so the button follows.
     spinRef.current = false;
     takenRef.current = true;
+    setAutoRotate(false);
     camera.vLambda = 0;
     camera.vPhi = 0;
 
     const deltaLambda = shortestDelta(camera.lambda, centre.lon);
     const targetPhi = clamp(centre.lat, -PHI_LIMIT, PHI_LIMIT);
-    const targetZoom = Math.max(camera.zoom, 1.5);
+    /*
+     * Zoom to fit what was selected, rather than to a fixed 1.5×.
+     *
+     * In an orthographic projection a point θ degrees from the centre lands at
+     * `radius · sin θ`, and the sphere is drawn at `baseRadius · zoom` with
+     * `baseRadius` already about half the shorter side. So everything inside θ
+     * stays on screen while `zoom · sin θ ≲ 1`, and `1 / sin θ` is the zoom
+     * that just fits it. FIT_MARGIN pulls it back so the outermost points are
+     * not against the rim.
+     *
+     * The fixed 1.5 was tolerable while only countries could be focused. It is
+     * not once a hosting provider can be: OVH's ten locations span 150° and at
+     * 1.5× the arcs joining them ran off all four edges, which is the opposite
+     * of what selecting a provider is for.
+     */
+    const spread = angularSpread(indices, centre);
+    const targetZoom =
+      spread <= 0
+        ? ZOOM_FIT_MAX
+        : clamp(
+            FIT_MARGIN / Math.sin(spread * (Math.PI / 180)),
+            ZOOM_MIN,
+            ZOOM_FIT_MAX,
+          );
 
     if (reducedRef.current) {
       camera.lambda = wrap180(centre.lon);
@@ -1105,8 +1205,8 @@ export function NodeGlobe({
     }
     engineRef.current?.clearHover();
     engineRef.current?.schedule();
-    setLive(`Centred on ${country}, ${indices.length} locations.`);
-  }, [points, countryOf, focus?.country, focus?.nonce]);
+    setLive(`Centred on ${focus.value}, ${indices.length} locations.`);
+  }, [points, countryOf, focus, focus?.kind, focus?.value, focus?.nonce]);
 
   // A proposal arrives. Suppressed under reduced motion, where the readout
   // beside the globe carries the same information without anything moving.
@@ -1127,8 +1227,14 @@ export function NodeGlobe({
   // so the first paint is a single still frame and the spin starts only once.
   useEffect(() => {
     reducedRef.current = reduced;
-    if (!reduced && !takenRef.current) spinRef.current = true;
-    if (reduced) spinRef.current = false;
+    if (!reduced && !takenRef.current) {
+      spinRef.current = true;
+      setAutoRotate(true);
+    }
+    if (reduced) {
+      spinRef.current = false;
+      setAutoRotate(false);
+    }
     engineRef.current?.schedule();
   }, [reduced]);
 
@@ -1143,6 +1249,7 @@ export function NodeGlobe({
     flightRef.current = null;
     spinRef.current = false;
     takenRef.current = true;
+    setAutoRotate(false);
     engagedRef.current = true;
     cameraRef.current.vLambda = 0;
     cameraRef.current.vPhi = 0;
@@ -1341,15 +1448,12 @@ export function NodeGlobe({
       case "Home":
       case "0":
         fly(HOME.lambda, HOME.phi, HOME.zoom);
-        takenRef.current = false;
-        if (!reducedRef.current) spinRef.current = true;
+        setRotation(true);
         setLive("Globe reset.");
         break;
       case " ":
-        spinRef.current = !spinRef.current && !reducedRef.current;
-        takenRef.current = true;
-        setLive(spinRef.current ? "Rotation resumed." : "Rotation stopped.");
-        engineRef.current?.schedule();
+        setRotation(!autoRotate);
+        setLive(autoRotate ? "Rotation stopped." : "Rotation resumed.");
         break;
       case "Escape":
         engineRef.current?.clearHover();
@@ -1446,6 +1550,41 @@ export function NodeGlobe({
           )}
         </div>
       )}
+
+      {/*
+        The rotation control.
+        
+        The globe stops the moment it is dragged and stays stopped, which is
+        right — a reader who has aimed it does not want it drifting away — but
+        until now the only way back was the space bar or Home, neither of which
+        announces itself. A button says the globe *can* turn, which is also the
+        clearest hint that it is not a picture.
+
+        It sits above the drag surface, so `stopPropagation` is not needed:
+        the surface's handlers are on a sibling, not an ancestor.
+      */}
+      <button
+        type="button"
+        onClick={() => {
+          setRotation(!autoRotate);
+          setLive(autoRotate ? "Rotation stopped." : "Rotation resumed.");
+        }}
+        disabled={reduced}
+        aria-pressed={autoRotate}
+        title={
+          reduced
+            ? "Rotation is off because this device asks for reduced motion."
+            : autoRotate
+              ? "Stop the rotation (space)"
+              : "Resume the rotation (space)"
+        }
+        className="panel text-ink-secondary hover:text-ink absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 px-2 py-1 text-[10.5px] tracking-wide uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span aria-hidden className="text-[8px] leading-none">
+          {autoRotate ? "❚❚" : "▶"}
+        </span>
+        {autoRotate ? "Rotating" : "Rotate"}
+      </button>
 
       <p id={hintId} className="sr-only">
         Drag to turn the globe, or use the arrow keys. Plus and minus zoom, Home
