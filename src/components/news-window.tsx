@@ -201,7 +201,10 @@ function NewsList({
                 </span>
 
                 <span className="text-ink-faint mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                  <NewsBadge category={item.category} />
+                  <NewsBadge
+                    direction={item.direction}
+                    category={item.category}
+                  />
                   <span>{item.source}</span>
                   {item.publishedAt && (
                     <>

@@ -67,6 +67,31 @@ const NOISE =
   /(price prediction|current price of|price today|live price|what is |how to |page \d+ of|forecast \d{4}|best .{0,20}(crypto|coin|altcoin)s? to buy|top \d+ (crypto|coin|altcoin|dapp))/i;
 
 /**
+ * A page that should carry no badge of any kind, whatever it appears to say.
+ *
+ * Exported because the direction classifier needs the same gate, and needs it
+ * for a reason a confidence threshold cannot serve. Measured on the live feed:
+ * 30 of 780 badged headlines were price-prediction and listicle pages, and
+ * **15 of those were badged at 0.9 confidence or above** — "TON Price
+ * Prediction: Bears Hold the Cards" at 1.00, "MultiversX Price Prediction:
+ * EGLD Surges 55%" at 1.00. The model is not wrong that the text reads
+ * bullish; the page is simply not a story about the chain. So no threshold can
+ * remove these — raising the cut to 0.9 would still keep half of them while
+ * throwing away 211 headlines that are right — and the gate has to be a
+ * separate judgement about the *page*, applied before the question is asked.
+ *
+ * It also means these are never sent upstream, which is the cheap half.
+ *
+ * It is a blunt instrument and known to cost a little: "Chainflip Hack on
+ * Tron: How to Check Whether Your USDT Swap Is Still Stuck" matches on "how
+ * to" and is a real bearish story. One or two rows against thirty is the trade
+ * being made, deliberately.
+ */
+export function isNoiseHeadline(title: string): boolean {
+  return NOISE.test(title);
+}
+
+/**
  * A headline holding two directions cannot carry one label, and this is what
  * catches every example that broke the naive version.
  *

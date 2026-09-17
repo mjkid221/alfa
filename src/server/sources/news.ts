@@ -3,9 +3,12 @@ import "server-only";
 import { cachedValue } from "~/server/cache/cached";
 import {
   classifyHeadline,
+  isNoiseHeadline,
   type NewsCategory,
 } from "~/server/domain/news-classify";
-import { mapLimit } from "~/server/lib/http";
+import type { NewsDirection } from "~/server/domain/types";
+import { deadline, mapLimit, settle } from "~/server/lib/http";
+import { classifyDirections } from "~/server/sources/typesafe";
 
 /**
  * Headlines, from public RSS.
@@ -50,8 +53,23 @@ export interface Headline {
   publishedAt: string | null;
   /** Chains this headline is about. */
   chains: string[];
-  /** What kind of news this is, where the headline says so plainly. */
+  /**
+   * What kind of news this is, where the headline says so plainly.
+   *
+   * Nulled across the whole feed whenever the direction classifier answered, so
+   * that one column never carries two vocabularies. It is the stand-in for a
+   * feed that has no directions at all, not for an individual unlabelled row.
+   */
   category: NewsCategory | null;
+  /**
+   * Whether the headline reads bullish or bearish, from TypeSafe.
+   *
+   * Null whenever the model was not confident enough, said neither, or was not
+   * reachable — and null is the normal case for roughly a third of headlines,
+   * not a failure. Those rows carry no badge at all, which is the point: a
+   * refusal to guess is what makes the rest worth showing.
+   */
+  direction: NewsDirection | null;
 }
 
 /** How much a chain was written about, against how much is shown. */
@@ -305,9 +323,9 @@ export function fetchHeadlines(
   const names = targets.map((chain) => chain.name);
 
   return cachedValue(
-    // v3: headlines carry a category, and results are filtered to those that
-    // actually name the chain — the cached shape and its contents both changed.
-    `news:headlines:v3:${names.length}`,
+    // v4: headlines carry a bullish/bearish direction alongside the category.
+    // v3 filtered results to those that actually name the chain.
+    `news:headlines:v4:${names.length}`,
     { ttlSeconds: 1800, staleSeconds: 21_600 },
     async (): Promise<NewsResult> => {
       const perChain = await mapLimit(targets, 6, async (entry) => {
@@ -347,6 +365,8 @@ export function fetchHeadlines(
               ...item,
               chains: [chain],
               category: classifyHeadline(item.title),
+              // Filled in below, once across the whole de-duplicated corpus.
+              direction: null,
             })),
           };
         } catch {
@@ -371,10 +391,49 @@ export function fetchHeadlines(
         }
       }
 
+      const headlines = [...byTitle.values()].sort((a, b) =>
+        (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
+      );
+
+      // Direction is read once over the de-duplicated corpus, not per chain, so
+      // a story found under five chains is classified once.
+      //
+      // Wrapped twice on purpose. `settle` means a billing failure or a dead
+      // host costs the badge and nothing else; `deadline` means a slow answer
+      // cannot extend the news fetch. Neither cancels the underlying pass — so
+      // a run that misses the deadline still finishes and still writes its
+      // verdicts, and the next refresh reads them for free.
+      // Price-prediction and listicle pages are filtered out before the
+      // question is asked rather than after it is answered. They are not
+      // stories about a chain, so the model reads them confidently — at 0.9
+      // and above — and no confidence threshold can reach them. See
+      // `isNoiseHeadline`.
+      const askable = headlines
+        .filter((item) => !isNoiseHeadline(item.title))
+        .map((item) => item.title);
+
+      const directions = await settle(
+        "typesafe:direction",
+        deadline(classifyDirections(askable), 30_000, "typesafe:direction"),
+      );
+
+      // Whether the event badge falls back is a question about the *source*,
+      // not about the row. A headline the model declined to call is meant to
+      // carry no badge — that refusal is the whole reason the direction is
+      // showable at all — so answering it with "Exploit" instead would both
+      // undo that and mix two vocabularies in one column, where the reader has
+      // no way to tell which claim a badge is making. So: if the classifier
+      // answered at all, direction is the only badge; if it is down or has
+      // never run, the keyless categories stand in for the whole feed.
+      const classifierAlive = Boolean(directions && directions.size > 0);
+
+      for (const item of headlines) {
+        item.direction = directions?.get(item.title) ?? null;
+        if (classifierAlive) item.category = null;
+      }
+
       return {
-        headlines: [...byTitle.values()].sort((a, b) =>
-          (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
-        ),
+        headlines,
         coverage: perChain
           .map((entry) => ({
             chain: entry.chain,
@@ -388,7 +447,9 @@ export function fetchHeadlines(
   );
 }
 
-function parseFeed(xml: string): Omit<Headline, "chains" | "category">[] {
+function parseFeed(
+  xml: string,
+): Omit<Headline, "chains" | "category" | "direction">[] {
   const blocks = xml.match(/<item[\s>][\s\S]*?<\/item>/gi) ?? [];
 
   return blocks

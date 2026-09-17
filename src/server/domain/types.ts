@@ -2,6 +2,14 @@
 
 import type { NewsCategory } from "./news-classify";
 
+/**
+ * How a headline reads for the chain it is about.
+ *
+ * Lives here rather than beside the adapter that produces it because the badge
+ * renders in the browser and `sources/typesafe.ts` is `server-only`.
+ */
+export type NewsDirection = "bullish" | "bearish";
+
 export interface ChainIdentity {
   /** URL-safe canonical id, e.g. `op-mainnet`. */
   slug: string;
@@ -319,11 +327,17 @@ export interface NewsFeed {
     publishedAt: string | null;
     chains: string[];
     /**
-     * What kind of news this is, where the headline says so plainly, or null
-     * where it does not. About a quarter carry one; see
-     * `domain/news-classify.ts` for why the rest are left alone.
+     * What kind of news this is, from the keyless classifier — and null on
+     * every headline whenever the direction classifier answered. It stands in
+     * for a feed with no directions, never for one unlabelled row.
      */
     category: NewsCategory | null;
+    /**
+     * Whether the headline reads bullish or bearish, or null where the reading
+     * was not confident enough, said neither, or was unavailable. See
+     * `sources/typesafe.ts`.
+     */
+    direction: NewsDirection | null;
   }[];
   /** How much each chain was written about in the window. */
   coverage: { chain: string; found: number; shown: number }[];
