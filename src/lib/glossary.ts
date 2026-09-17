@@ -315,10 +315,10 @@ export const GLOSSARY = {
   },
 
   newsCategory: {
-    title: "What kind of news",
+    title: "How a headline reads",
     short:
-      "A badge naming the event a headline describes — an exploit, a listing, a launch, a dated price move — tinted by whether it reads well or badly.",
-    long: 'It is a pattern match on the headline, and nothing more. No article is read: the feed is Google News RSS, which carries a title and no body, and every source in this app is free and keyless, so there is no sentiment service behind it.\n\nIt deliberately does not say "bullish" or "bearish". That version was built and measured against 1,842 headlines: it labelled far more of them, and got the direction wrong about a quarter of the time in ways that looked confident — "Bitcoin climbs despite equity weakness" read as bearish, and "no user funds lost" read as bullish. A headline reliably says what happened and unreliably says what it means for the price, so the badge names the event and leaves the conclusion to you.\n\nAbout a quarter of headlines carry one. The rest say nothing unambiguous enough — anything holding two directions at once is left alone rather than guessed at.',
+      "A badge marking a headline bullish or bearish, shown only where the reading is confident enough to be worth showing.",
+    long: 'It is a reading of the **headline text alone**. No article is read — the feed is Google News RSS, which carries a title and no body — and no price, volume or chart is consulted. It is not a forecast, it is not advice, and nothing about it reaches the valuation model.\n\nThe first attempt at this was a word scorer, and it was rejected: measured against 1,842 headlines it got the direction wrong about a quarter of the time in ways that looked confident, reading "Bitcoin climbs despite equity weakness" as bearish and "no user funds lost" as bullish. What makes the current version showable is not that it is never wrong but that it reports how sure it is, and below a threshold the badge simply does not appear. Roughly a third of headlines get no badge, which is the mechanism working rather than failing.\n\nOne reading per headline, not per chain. A story naming two chains carries the same badge on both, so the occasional headline that is good for one and bad for the other is marked for whichever it reads as overall.\n\nWhere the reading is unavailable — it is the one paid source in this app, and it is optional — the badge falls back to naming the event instead, from a keyless pattern match on the same title.',
     example:
       'Positive badges outnumber negative ones roughly two to one. That is the press, not the market: outlets write "surges" far more often than "drops".',
   },

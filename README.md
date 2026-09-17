@@ -339,25 +339,42 @@ No free crypto news API exists: CoinGecko's is Pro-only, CryptoPanic wants a key
 Google News publishes any search as RSS without one, which is what makes
 per-chain coverage possible. Roughly 1,300 articles across 44 chains.
 
-#### What kind of news, and why not bullish or bearish
+#### Bullish or bearish, and how that became showable
 
-Each headline can carry a badge naming the event — Exploit, Outage, Legal,
-Launch, Listing, Upgrade, Partnership, Funding, Price up, Price down — tinted by
-whether it reads well or badly. No article is read: Google News RSS carries a
-title and no body, and there is no keyless sentiment service (CryptoPanic
-answers 403 without a key, measured September 2026). It is a pattern match on
-the headline.
+Each headline can carry a **Bullish** or **Bearish** badge. No article is read:
+Google News RSS carries a title and no body, so this is a reading of the headline
+text and nothing else. It is not a forecast, it is not advice, and it never
+touches the valuation model.
 
-**It deliberately does not say bullish or bearish.** That version was built
-first and measured against all 1,842 live headlines. It labelled 43% of them and
-got the direction wrong roughly a quarter of the time, confidently: `Airdropping`
-matched `drop`; "Bitcoin climbs *despite* equity weakness" read bearish; "no user
-funds lost" read *bullish* on a story about an attack. Restricting to patterns
-that label themselves, and refusing any headline holding two directions at once,
-took coverage to 24% and accuracy to roughly 87% on the positive side. The split
-is the finding: **a headline reliably says what happened and unreliably says what
-it means for the price.** So the badge names the event and leaves the conclusion
-to the reader.
+**The first version of this was built, measured, and thrown away.** A
+bullish-minus-bearish word scorer was run against all 1,842 live headlines. It
+labelled 43% of them and got the direction wrong roughly a quarter of the time —
+`Airdropping` matched `drop`; "Bitcoin climbs *despite* equity weakness" read
+bearish; "no user funds lost" read *bullish* on a story about an attack. The
+problem was not the error rate so much as the manner of it: the wrong answers
+looked exactly as sure as the right ones. The conclusion at the time was that a
+headline reliably says what happened and unreliably says what it means, so the
+badge named the event instead — Exploit, Launch, Listing — and left the
+conclusion to the reader.
+
+That turned out to be a fact about the word scorer rather than about headlines.
+Re-measured against a model that returns a **calibrated confidence** alongside
+its answer, every one of those failures comes back right, and the ones that are
+genuinely ambiguous come back *marked* as ambiguous — "Ripple CTO Drops Satoshi
+Bombshell" lands at 0.35, well under the threshold, instead of confidently
+bearish. Of 60 live headlines, all fourteen in the 0.60–0.90 band were correct on
+a hand check, including "Upgrade Draws $9.11M Whale Longs *Despite* Bearish
+Futures Market"; every error found sat below 0.6.
+
+So the badge shows a direction only above a confidence threshold, and roughly a
+third of headlines get none. **That is the mechanism working, not failing** — the
+blank is the model declining to guess, which is the thing the first version could
+not do. Coverage went from 24% to about two thirds of rows.
+
+This is the one paid source in the app, and it is deliberately not load-bearing:
+verdicts are cached per headline, a failure trips a breaker rather than retrying,
+and if the key is absent or out of credit the badge quietly falls back to naming
+the event from the original keyless classifier.
 
 Positive badges outrun negative ones about two to one. That is the press, not the
 market — outlets write "surges" far more often than "drops".
@@ -811,7 +828,9 @@ degrades to public endpoints exactly as the app degrades without Redis.
   beside them rather than substituted, because the float you can buy today is the
   right denominator for a ratio; the overhang is the caveat, not a replacement.
 - Social metrics are absent by necessity, not choice. Follower counts sit behind
-  a paid API, and the free tiers that once carried sentiment have closed.
+  a paid API, and the free tiers that once carried sentiment have closed. The
+  headline badge is not a substitute: it reads one headline at a time and
+  measures nobody's opinion but the writer's.
 - News coverage is thin below the top ten chains, because the press is. That is a
   fact about the media, not a gap in the plumbing.
 - Token Terminal was evaluated and left out. Its public API needs a paid key, its

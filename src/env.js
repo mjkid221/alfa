@@ -22,6 +22,17 @@ export const env = createEnv({
      * RPC exactly as the app degrades without Redis.
      */
     ALCHEMY_API_KEY: z.string().min(1).optional(),
+
+    /**
+     * TypeSafe AI. Optional, and the only paid source in the app — it reads a
+     * headline as bullish or bearish for the news badge.
+     *
+     * Unset, or out of credit, or rate limited, headlines render exactly as
+     * they did before with the keyless event badge from `news-classify.ts`.
+     * Nothing waits on it: see `sources/typesafe.ts` for the breaker and the
+     * verdict cache that keep a full corpus at about a cent.
+     */
+    TYPESAFE_API_KEY: z.string().min(1).optional(),
   },
 
   client: {},
@@ -31,6 +42,7 @@ export const env = createEnv({
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
     ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY,
+    TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
   },
 
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,

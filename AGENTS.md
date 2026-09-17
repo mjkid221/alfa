@@ -51,15 +51,22 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
    nothing from `market*`. Fear & Greed, altcoin season, rainbow, cycles and
    flows are shown, never scored. Check with
    `grep -n "market-" src/server/domain/score.ts src/server/domain/aggregate.ts`.
-2. **Every source is free, and keyless wherever possible.** No paid tiers.
-   Two optional keys exist and the app degrades without either: Upstash Redis,
-   and `ALCHEMY_API_KEY` for developer mode's gas readings. Alchemy is a
+2. **Every source is free and keyless by default, and the exceptions are
+   named here.** Three optional keys exist and the app degrades without any of
+   them: Upstash Redis; `ALCHEMY_API_KEY` for developer mode's gas readings; and
+   `TYPESAFE_API_KEY` for the news badge's bullish/bearish reading. Alchemy is a
    **fallback only** — public RPCs answer for 39 of the 41 EVM chains, so the
    key serves the handful that are unreliable, and unset the feature falls back
-   to public endpoints. Everything else stays keyless: Boardroom (401) and Tally
-   were rejected for governance on exactly this ground. DefiLlama's bridges API,
-   CoinGecko history beyond 365 days and total-market-cap history are paid; do
-   not reintroduce them.
+   to public endpoints. **TypeSafe is the one paid source**, at $0.042/MTok
+   input and about a cent for the whole headline corpus; it was allowed in
+   because the thing it buys cannot be had keylessly at any quality (see the
+   news entry below), and it is fenced so that it can never be load-bearing —
+   verdicts are cached per headline, a failure opens a breaker, and the badge
+   falls back to the keyless classifier. Anything else paid needs the same
+   three properties before it goes in. Everything else stays keyless: Boardroom
+   (401) and Tally were rejected for governance on exactly this ground.
+   DefiLlama's bridges API, CoinGecko history beyond 365 days and
+   total-market-cap history are paid; do not reintroduce them.
 3. **Every source is optional.** A failed or slow upstream yields `null` and a
    `degraded`/`unavailable` status, never a thrown page. Sources carry
    deadlines (`deadline()` in `server/lib/http.ts`) so an SSR prefetch never
@@ -147,15 +154,66 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   a `" (TBD)"` suffix; the series are cumulative but **not monotonic**
   (Ethereum's staking tranche falls, netting EIP-1559 burns).
 - News: Google News RSS gives a title and nothing else — no body, no image, and
-  its links are redirects. There is no keyless sentiment API either (CryptoPanic
-  403s without a key, its v2 endpoint 404s; CoinGecko news is Pro-only), so
-  `domain/news-classify.ts` is a local pattern match on the headline. It names
-  the **event**, never a bullish/bearish direction: the direction version was
-  measured at ~57% on bearish calls, and its failures ("no user funds lost" read
-  as bullish) were confident. Keep every pattern word-bounded, never flip on
-  negation — refuse instead — and leave anything with a contrast word unlabelled.
-  About 24% of headlines get a badge; positives outrun negatives 2:1 because the
-  press does.
+  its links are redirects. No keyless sentiment API exists (CryptoPanic 403s
+  without a key, its v2 endpoint 404s; CoinGecko news is Pro-only), so
+  `domain/news-classify.ts` is a local pattern match that names the **event**.
+  Keep every pattern word-bounded, never flip on negation — refuse instead — and
+  leave anything with a contrast word unlabelled. About 24% of headlines get a
+  badge; positives outrun negatives 2:1 because the press does. It is now the
+  **fallback**, not what renders.
+- **The direction label was rejected for being confidently wrong, and that was a
+  fact about the matcher, not about the problem.** The word scorer labelled 43%
+  of 1,842 headlines at ~80% bullish and **~57% bearish**, and what disqualified
+  it was that its failures were *confident*: "no user funds lost" read bullish,
+  `Airdropping` matched `drop`, "climbs despite equity weakness" read bearish.
+  Re-measured against TypeSafe (`sources/typesafe.ts`), every one of those is
+  right — and the confidence tracks correctness, which is the property that was
+  missing. Over 60 live headlines, **all 14 in the 0.60–0.90 band hand-checked
+  correct**, including "Upgrade Draws $9.11M Whale Longs *Despite* Bearish
+  Futures Market"; every error found sat **below 0.6**, which is what
+  `DIRECTION_MIN_CONFIDENCE` (0.7) exists to cut. Coverage 24% → ~67% of rows.
+  The lesson generalises: a measurement that killed an approach was a
+  measurement of one *implementation*, so re-run it before treating it as a law.
+- **Batching TypeSafe is not an optimisation, it is most of the cost.** One
+  headline per request is 387 input tokens because the criteria dwarf the
+  headline; twenty per request is **132 each** and takes the same 0.67s. Accuracy
+  does not suffer — among headlines where both modes cleared 0.6, batched and
+  single agreed 13 of 13, and all three disagreements were sub-0.6 in both. The
+  verdict cache is keyed on the **title**, not the headline id, because the id
+  folds in the outlet and a syndicated story should cost one call; it is an
+  accumulating map pruned to the live corpus, not `cachedValue`, which would
+  re-run its loader wholesale and defeat the point. A dead key with a cold cache
+  would be ~93 failing requests every 30 minutes, so the first non-200 aborts the
+  pass and opens a breaker — an hour for auth and billing, five minutes for a
+  rate limit.
+- **A confidence threshold cannot fix a bad *page*, only a bad reading.** 30 of
+  780 badged headlines were price-prediction and listicle pages — and **15 were
+  badged at 0.9 or above** ("TON Price Prediction: Bears Hold the Cards" at
+  1.00). The model is not wrong that the text reads bullish; the page is simply
+  not a story about a chain, so no cut reaches it — 0.9 would still keep half of
+  them while discarding 211 correct rows. `isNoiseHeadline` (the classifier's
+  existing `NOISE` gate, now exported) runs **before** the question is asked, so
+  those headlines are never badged and never sent upstream: 131 of ~1,250, a
+  standing 10% off the bill. Measured after: 750 badged, 0 on a listicle. The
+  general rule is that a threshold tunes *how sure* an answer must be and can
+  never express *which questions are worth asking* — when the failures are
+  confident, reach for a gate, not the dial.
+- **The badged bands, so a future threshold change is not a guess.** 0.90–1.00
+  (569 rows) is excellent; 0.80–0.90 (142) good; 0.70–0.80 (69) about 80% and
+  still catching real signal ("MegaETH Kills Mega Mafia After Backed Apps Desert
+  the Network"); 0.60–0.70 (45) about 60%, where marketing and presale spam
+  start. 0.7 is the elbow, which is why `DIRECTION_MIN_CONFIDENCE` sits there.
+- **What goes unbadged is mostly not news.** Of 488 unbadged, 160 are
+  confidently neutral and are currency converters, price-ticker pages and
+  name-collision noise the alias filter missed (an esports team called Aurora, a
+  tournament called BLAST). Around 264 are genuinely two-sided stories. That the
+  badge exposes how much of the feed is not news is a **feed** problem, not a
+  classifier one, and `NEWS_ALIASES` is where it would be fixed.
+- **One direction per headline, not per chain.** Direction genuinely is
+  chain-specific sometimes ("BTC slides as BNB bucks the selloff" is good for
+  BNB), but only ~8% of headlines carry more than one chain, and the badge
+  renders in two places — a row reading bullish in the Headlines window and
+  bearish on the chain page would read as a bug. The title is the unit.
 - A Google News search for a chain mostly returns other people's news when the
   chain is named after an English word: of 1,989 headline-chain pairs, 488 never
   named the chain (Abstract 45/46, BOB 30/39, Provenance 17/19). `news.ts` keeps
