@@ -128,9 +128,11 @@ export function Screen({ initialMode }: { initialMode: ScreenMode }) {
   const chains = rebased?.chains ?? served;
   const regression = rebased?.regression ?? meta?.regression ?? null;
 
+  // `mode` is an argument because the presets are valuation verdicts and
+  // developer mode neither shows them nor should apply them.
   const filtered = useMemo(
-    () => applyFilters(chains, filters),
-    [chains, filters],
+    () => applyFilters(chains, filters, mode),
+    [chains, filters, mode],
   );
 
   /*
