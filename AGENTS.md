@@ -34,10 +34,11 @@ src/app/                 routes; page.tsx prefetches chains + market.brief; api/
 src/server/domain/       score.ts (the model), aggregate.ts (snapshot build, universe, flow union),
                          market*.ts (display-only market indicators), types.ts
 src/server/sources/      one adapter per upstream: defillama, artemis, mayan, coingecko, coinmetrics,
-                         alternative-me, mempool, l2beat, news (Google News RSS), bridges/{wormhole,debridge}
+                         alternative-me, mempool, l2beat, news (Google News RSS), typesafe (headline direction),
+                         google-trends (search interest), bridges/{wormhole,debridge}
 src/server/cache/        cachedValue(key, {ttlSeconds, staleSeconds}, loader): L1 map + Upstash Redis,
                          stale-while-revalidate, refreshes kept alive with waitUntil
-src/server/api/routers/  chains (list, detail, meta, news, methodology, compare), market (brief, cycle, detail)
+src/server/api/routers/  chains (list, detail, meta, news, methodology, compare), market (brief, cycle, detail, search)
 src/components/          screen.tsx (home), division-leaders.tsx (the L1/L2 hero),
                          chain-detail.tsx, compare-window.tsx, table/, chart/,
                          market/, window/, ui/
@@ -93,7 +94,7 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
 7. **Windows are outside `HydrateClient`.** A `useQuery` there for a key the
    page prefetched makes TanStack defer hydration and causes an SSR mismatch.
    Windows read prefetched data through their own queries only when those keys
-   are never prefetched (market.cycle, market.detail, chains.compare) or via
+   are never prefetched (market.cycle, market.detail, market.search, chains.compare) or via
    the detail payload.
 8. **`score.ts` and `thesis.ts` must stay pure.** The home screen imports both
    into the browser to re-score the universe on fully diluted valuation
@@ -121,6 +122,30 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   caching.
 - alternative.me `limit=0` returns all of Fear & Greed since 2018-02-01; the
   feed skips days, so align by date and forward-fill.
+- **Google Trends is keyless through the page's own endpoints**
+  (`sources/google-trends.ts`): `api/explore` hands out a widget token and
+  `widgetdata/multiline` exchanges it for the series; both prefix the JSON with
+  `)]}'`. The first request from a fresh client is a 429 that **sets an `NID`
+  cookie**, and sent back it is accepted — without it ten requests were ten
+  429s, with it 25 calls met six, each cleared by a retry. The app's own user
+  agent is enough. One request at a time per instance, each term cached for a
+  day with a month of stale grace, and a ten-minute breaker after a pass that
+  stays refused, because the rail re-polls every 15s while a source is down.
+- **Google scales the month in progress down, and not by a fixed factor**: 11
+  days into October "crypto" read 27 against September's 56 while "buy crypto"
+  read 46 against 44. Partial points are dropped; every reading is of complete
+  months. And the range matters: over five years "bitcoin" peaks in June 2022,
+  the Luna collapse, so the series is requested over **all of history** (monthly
+  since 2004), where it peaks in December 2017 and the manias are the reference.
+- **Search interest is the mean of five terms that existed every cycle** —
+  bitcoin, crypto, buy crypto, buy bitcoin, coinbase — withheld for any month a
+  term is missing. "memecoin" was the hottest term (62% of its peak) and is out
+  because it reads zero before 2021 and would drag the history. The zones in
+  `SEARCH_HEAT_ZONES` are cut where the mean stood at recorded turns: lows 5
+  (Mar 2019) and 13 (Sep 2023) — search bottoms months after price, which
+  bottomed at a reading of 21 in Nov 2022; highs 56 (Nov 2021), 58 (Aug 2025);
+  manias 69 (Dec 2017) and 75 (May 2021). Google samples, so a month moves a
+  point between fetches. Four cycles is a small sample.
 - Mayan `chains-overview?timeRange=30d` is honoured; any other parameter name
   silently returns lifetime volume. The adapter throws if a month exceeds half
   of all-time.

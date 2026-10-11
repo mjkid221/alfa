@@ -8,6 +8,10 @@ import {
   fetchCoinPriceHistory,
   fetchCoinPriceHistoryWeekly,
 } from "~/server/sources/defillama-coins";
+import {
+  fetchSearchTrends,
+  SEARCH_TERMS,
+} from "~/server/sources/google-trends";
 import { fetchBlockHeight } from "~/server/sources/mempool";
 import * as ind from "./market-indicators";
 import type {
@@ -20,6 +24,8 @@ import type {
   MarketDetail,
   MarketSource,
   MarketSourceId,
+  SearchInterest,
+  SearchTermHistory,
   TopMarketRow,
 } from "./market-types";
 
@@ -40,6 +46,8 @@ import type {
 const BRIEF_DEADLINE_MS = 4_000;
 const CYCLE_DEADLINE_MS = 20_000;
 const DETAIL_DEADLINE_MS = 25_000;
+/** Ten sequential requests on a cold cache, a few of them retried. */
+const SEARCH_DEADLINE_MS = 25_000;
 
 /** The daily price grid: a year for the rail's sparkline, plus the index window. */
 const PRICE_DAYS = 365 + ind.ALTSEASON_WINDOW;
@@ -117,11 +125,26 @@ async function loadMarketInputs(deadlineMs: number): Promise<MarketInputs> {
 
 /* ----------------------------------------------------------------- public ---- */
 
+/**
+ * Search interest loads beside the other inputs for the brief, not inside
+ * `loadMarketInputs`: the cycle and the detail have no use for it, and a cold
+ * Google would otherwise hold both for up to their deadlines.
+ */
 export async function getMarketBrief(
   options: { deadlineMs?: number } = {},
 ): Promise<MarketBrief> {
-  return buildBrief(
-    await loadMarketInputs(options.deadlineMs ?? BRIEF_DEADLINE_MS),
+  const deadlineMs = options.deadlineMs ?? BRIEF_DEADLINE_MS;
+  const [inputs, search] = await Promise.all([
+    loadMarketInputs(deadlineMs),
+    attempt("google-trends", fetchSearchTrends(), deadlineMs),
+  ]);
+  return buildBrief(inputs, search);
+}
+
+/** The Market window's search card, on its own request. */
+export async function getMarketSearch(): Promise<SearchInterest> {
+  return buildSearch(
+    await attempt("google-trends", fetchSearchTrends(), SEARCH_DEADLINE_MS),
   );
 }
 
@@ -164,7 +187,10 @@ function lastValue(series: readonly (number | null)[]): number | null {
   return null;
 }
 
-function buildBrief(inputs: MarketInputs): MarketBrief {
+function buildBrief(
+  inputs: MarketInputs,
+  search?: Outcome<(SearchTermHistory | null)[]>,
+): MarketBrief {
   const h = inputs.history.value;
   const last = h ? h.price.length - 1 : -1;
   const price = h ? (h.price[last] ?? null) : null;
@@ -192,11 +218,14 @@ function buildBrief(inputs: MarketInputs): MarketBrief {
         })
       : null;
 
+  const searchNow = search ? buildSearch(search) : null;
+
   return {
     generatedAt: new Date().toISOString(),
-    warming: Object.values(inputs).some(
-      (o: Outcome<unknown>) => o.state === "timeout",
-    ),
+    warming:
+      Object.values(inputs).some(
+        (o: Outcome<unknown>) => o.state === "timeout",
+      ) || search?.state === "timeout",
 
     btc: {
       price,
@@ -243,6 +272,16 @@ function buildBrief(inputs: MarketInputs): MarketBrief {
 
     halving,
 
+    searchInterest: {
+      value: searchNow?.latest?.value ?? null,
+      reading: searchNow?.reading ?? null,
+      // Three years of months: the last run-up and where it has gone since.
+      spark: searchNow ? ind.spark(searchNow.composite, 36) : null,
+      asOf: searchNow?.latest?.month ?? null,
+      month: searchNow?.latest?.month ?? null,
+      peak: searchNow?.peak ?? null,
+    },
+
     cycle: cycles
       ? {
           phase: cycles.phase,
@@ -255,7 +294,55 @@ function buildBrief(inputs: MarketInputs): MarketBrief {
         }
       : null,
 
-    sources: buildSources(inputs),
+    sources: [
+      ...buildSources(inputs),
+      ...(searchNow ? [searchNow.source] : []),
+    ],
+  };
+}
+
+/* ----------------------------------------------------------------- search ---- */
+
+function buildSearch(
+  outcome: Outcome<(SearchTermHistory | null)[]>,
+): SearchInterest {
+  const histories = outcome.value ?? [];
+  const answered = histories.filter(Boolean).length;
+  const grid = ind.searchGrid(histories, SEARCH_TERMS);
+  const composite = grid?.composite ?? [];
+  const months = grid?.months ?? [];
+
+  let latest: SearchInterest["latest"] = null;
+  for (let i = composite.length - 1; i >= 0; i--) {
+    const value = composite[i];
+    if (value != null) {
+      latest = { month: months[i]!, value };
+      break;
+    }
+  }
+  const { peak, trough } = ind.searchExtremes(months, composite);
+
+  const status: MarketSource["status"] =
+    outcome.state === "timeout"
+      ? "degraded"
+      : answered === SEARCH_TERMS.length
+        ? "ok"
+        : answered > 0
+          ? "degraded"
+          : "unavailable";
+
+  return {
+    generatedAt: new Date().toISOString(),
+    start: months[0] ?? ind.SEARCH_FROM,
+    months: months.length,
+    terms: grid?.terms ?? [],
+    composite,
+    latest,
+    reading: latest ? ind.searchHeatReading(latest, peak, trough) : null,
+    peak,
+    trough,
+    answered,
+    source: source("google-trends", status, latest?.month ?? null),
   };
 }
 
@@ -412,6 +499,11 @@ const SOURCE_META: Record<
     label: "mempool.space",
     url: "https://mempool.space/",
     note: "Block height, for the halving countdown.",
+  },
+  "google-trends": {
+    label: "Google Trends",
+    url: "https://trends.google.com/trends/explore?date=all&q=bitcoin,crypto,buy%20crypto,buy%20bitcoin,coinbase",
+    note: "Worldwide web search interest in five terms, monthly since 2004, each against its own busiest month.",
   },
 };
 

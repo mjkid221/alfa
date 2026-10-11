@@ -34,6 +34,7 @@ export function IndicatorTile({
   hint,
   series,
   visual,
+  seriesStep = "day",
   accent,
   settleIndex = 0,
   onOpen,
@@ -51,8 +52,10 @@ export function IndicatorTile({
   detail?: string | null;
   /** A sentence under the figure, for tiles with no visual. */
   hint?: string | null;
-  /** Trailing daily values, drawn as a muted sparkline when `visual` is absent. */
+  /** Trailing values, drawn as a muted sparkline when `visual` is absent. */
   series?: readonly number[] | null;
+  /** What one step of `series` is, for its accessible name. */
+  seriesStep?: "day" | "month";
   /** Replaces the sparkline. */
   visual?: React.ReactNode;
   accent?: string;
@@ -148,7 +151,7 @@ export function IndicatorTile({
               width={256}
               height={40}
               tone="muted"
-              aria-label={`${label}, last ${series!.length} days`}
+              aria-label={`${label}, last ${series!.length} ${seriesStep}s`}
             />
           ))
         ) : hint && !unavailable ? (

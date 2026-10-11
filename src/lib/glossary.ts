@@ -348,6 +348,17 @@ export const GLOSSARY = {
       "74 reads as Greed. Below 25 is Extreme fear; above 75 is Extreme greed.",
   },
 
+  searchInterest: {
+    title: "Search interest",
+    short:
+      "How hard the world is searching Google for crypto: five terms, each against its own busiest month since 2004, averaged.",
+    long: 'The terms are "bitcoin", "crypto", "buy crypto", "buy bitcoin" and "coinbase" — the asset, the category, two ways of asking to buy, and the place most people do. Each was chosen because it has existed through every cycle since 2013, so the average means the same thing in 2017 as today.\n\nGoogle never publishes search counts. It scales each term so its busiest month reads 100, which makes a term comparable with its own past but not with the other terms: "bitcoin" at 21 and "buy crypto" at 44 says each sits at that share of its own peak, not that one was searched more. The current month is left out until it ends, because Google reports a partial month scaled down.\n\nThe named zones are cut where the average stood at turns already on record — both bear-market lows sat below 15, both manias above 60 — so they describe four cycles, not a law. Nothing here reaches the valuation model.',
+    formula:
+      "The mean of the five terms' monthly values, each 0–100 against that term's own busiest month since 2004. Withheld for any month a term is missing.",
+    example:
+      "The May 2021 mania read 75 and the March 2019 low 5. Below 15 is Cold; 60 and above is Mania.",
+  },
+
   rainbowBand: {
     title: "Bitcoin rainbow chart",
     short:

@@ -851,15 +851,16 @@ pnpm lint        # eslint
 
 ## Market context
 
-Beside the ranking sits a rail of five market signals that read at a glance —
-Fear & Greed, the 90-day altcoin season index, the Bitcoin rainbow band, where
-Bitcoin sits in its four-year cycle, and the halving countdown. A **Market**
+Beside the ranking sits a rail of six market signals that read at a glance —
+Fear & Greed, Google search interest, the 90-day altcoin season index, the Bitcoin
+rainbow band, where Bitcoin sits in its four-year cycle, and the halving countdown. A **Market**
 window holds the rest: **the market cycle** (since 2018, Bitcoin's price
 coloured by Fear & Greed and the altcoin market cap coloured by the altcoin
 season index, one time axis and one crosshair); **Bitcoin's four-year cycle** (every top and bottom found from the
 price record, power-law curves through each, and the window past spacing implies
-for the next bottom and top); Fear & Greed since 2018; every coin the altcoin
-season index counted; and the rainbow chart. **None of it feeds the model**:
+for the next bottom and top); Fear & Greed since 2018; **search interest** since
+2016, the average of five search terms drawn over the terms themselves; every coin
+the altcoin season index counted; and the rainbow chart. **None of it feeds the model**:
 `score.ts` and `aggregate.ts` import nothing from `market*`.
 
 Everything comes from free, keyless endpoints:
@@ -871,6 +872,7 @@ Everything comes from free, keyless endpoints:
 | The top 100 by market cap, with circulating supply                       | CoinGecko                                                                 |
 | Prices for those 100 coins — daily for 15 months, weekly since late 2017 | DefiLlama coins API (the altcoin season index and the altcoin market cap) |
 | Block height                                                             | mempool.space, blockstream.info                                           |
+| Search interest in five terms, monthly since 2004                        | Google Trends, through the endpoints its own page calls                   |
 
 Honest labels: the **altcoin season index is CoinMarketCap's 90-day definition**
 computed on real history, with the number of coins compared shown beside it;
@@ -882,3 +884,15 @@ for expensive, each band named at the chart's edge. The regression is fitted to 
 before 2025 so the band edges do not drift daily, and the nine bands are equal
 log-steps spanning the middle 99% of its residuals, so the price has been inside
 the rainbow on 99% of days.
+
+**Search interest** is the mean of "bitcoin", "crypto", "buy crypto", "buy
+bitcoin" and "coinbase" — terms chosen because each existed through every cycle,
+so the average means the same thing in 2017 as today. Google publishes no search
+counts: it scales each term so its busiest month since 2004 reads 100, so a term
+compares with its own past and never with another term. The month in progress is
+left out, because Google reports a partial month scaled down, and the named zones
+are cut where the average stood at recorded turns — both bear-market lows below
+15, both manias above 60 — which is four cycles of evidence, not a law. There is
+no official keyless API; the page's own endpoints answer once a first refusal has
+handed out a session cookie, and each term is cached for a day with a month of
+grace, because Google is quick to refuse data-centre addresses.
