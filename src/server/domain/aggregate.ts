@@ -609,6 +609,7 @@ export async function getNews(): Promise<NewsFeed> {
   return {
     headlines: result?.headlines ?? [],
     coverage: result?.coverage ?? [],
+    daily: result?.daily ?? null,
     windowDays: NEWS_WINDOW_DAYS,
   };
 }

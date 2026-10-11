@@ -884,6 +884,7 @@ export function ChainDetail({
                           <span className="text-ink-faint mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                             <NewsBadge
                               direction={item.direction}
+                              leaning={item.leaning}
                               category={item.category}
                             />
                             <span>

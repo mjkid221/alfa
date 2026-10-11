@@ -337,11 +337,12 @@ guessing would be worse than admitting it.
 
 No free crypto news API exists: CoinGecko's is Pro-only, CryptoPanic wants a key.
 Google News publishes any search as RSS without one, which is what makes
-per-chain coverage possible. Roughly 1,300 articles across 44 chains.
+per-chain coverage possible. Roughly 1,400 articles across 78 chains, from two
+searches per chain: the last thirty days, and the last day on its own.
 
 #### Bullish or bearish, and how that became showable
 
-Each headline can carry a **Bullish** or **Bearish** badge. No article is read:
+Every headline carries a **Bullish** or **Bearish** badge. No article is read:
 Google News RSS carries a title and no body, so this is a reading of the headline
 text and nothing else. It is not a forecast, it is not advice, and it never
 touches the valuation model.
@@ -366,18 +367,55 @@ bearish. Of 60 live headlines, all fourteen in the 0.60–0.90 band were correct
 a hand check, including "Upgrade Draws $9.11M Whale Longs *Despite* Bearish
 Futures Market"; every error found sat below 0.6.
 
-So the badge shows a direction only above a confidence threshold, and roughly a
-third of headlines get none. **That is the mechanism working, not failing** — the
-blank is the model declining to guess, which is the thing the first version could
-not do. Coverage went from 24% to about two thirds of rows.
+The first version of the badge used that threshold as a gate: a direction showed
+only above 0.7, and roughly a third of headlines got none. That left plainly
+directional rows bare, so it was measured before it was changed. 105 of the bare
+and badged rows were hand-labelled first and the model's answers read after:
+where a headline had a direction at all, **the side it leaned to was right 92% of
+the time**, below the threshold included. The gate was throwing away answers that
+were mostly right.
+
+So the threshold now decides the badge's form rather than whether it exists.
+Above it the badge is a clear **Bullish**; below it, an outlined **Leans
+bullish**. Where the model calls a headline neither, a second, forced question in
+the same request picks the side it leans to. Price predictions and listicles are
+badged too, but never clear, however sure the model is: a confident reading of
+one is a confident reading of marketing copy. Pages that are not articles at all —
+currency converters, price tickers, chart pages — are dropped from the feed, which
+is 136 of 1,332 rows that never had a direction to give.
+
+The cost is noise, accepted on purpose, and the noise leans bullish: of the
+labelled headlines with no real direction, 33 of 40 leaned that way, because the
+press does. That is why leans look different and are counted apart.
 
 This is the one paid source in the app, and it is deliberately not load-bearing:
 verdicts are cached per headline, a failure trips a breaker rather than retrying,
 and if the key is absent or out of credit the badge quietly falls back to naming
 the event from the original keyless classifier.
 
-Positive badges outrun negative ones about two to one. That is the press, not the
-market — outlets write "surges" far more often than "drops".
+Positive badges outrun negative ones about three to one. That is the press, not
+the market — outlets write "surges" far more often than "drops".
+
+#### Bullish and bearish, counted by day
+
+The Headlines window opens on a count of bullish and bearish headlines for each of
+the last thirty days, leans stacked apart from clear readings, narrowed to a chain
+when one is chosen. It is **not** counted from the list. The thirty-day search is a
+relevance sample of the month, not a record of it: it held 5 to 30 headlines a day
+three weeks back and 90 to 137 a day in the last week, and searching a single past
+day directly found 7 Cardano articles for 16 September where the month's search
+held none. Counted off the list, the chart would have drawn a news boom that was
+really Google's ranking.
+
+So every headline either search returns goes into a tally kept for the length of
+the window, and every day, once it ends, is searched on its own with Google News'
+date bounds — one search per chain. That only makes days comparable if each is
+searched at the same age, because Google returns less of a day the older it gets:
+Saturdays searched one, two, three and four weeks late held 133, 111, 57 and 31
+headlines, against 235 for the one searched the next morning. So each day is
+searched the day after it ends — by the daily cron if nobody has opened the window
+— and a day searched later than that, or not yet, is drawn faded and says it
+undercounts. A promptly searched day holds 180 to 330 headlines.
 
 #### Only headlines that name the chain
 

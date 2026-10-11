@@ -195,9 +195,9 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   right — and the confidence tracks correctness, which is the property that was
   missing. Over 60 live headlines, **all 14 in the 0.60–0.90 band hand-checked
   correct**, including "Upgrade Draws $9.11M Whale Longs *Despite* Bearish
-  Futures Market"; every error found sat **below 0.6**, which is what
-  `DIRECTION_MIN_CONFIDENCE` (0.7) exists to cut. Coverage 24% → ~67% of rows.
-  The lesson generalises: a measurement that killed an approach was a
+  Futures Market"; every error found sat **below 0.6**, which is where
+  `DIRECTION_MIN_CONFIDENCE` (0.7) draws the line between a clear reading and a
+  lean. The lesson generalises: a measurement that killed an approach was a
   measurement of one *implementation*, so re-run it before treating it as a law.
 - **Batching TypeSafe is not an optimisation, it is most of the cost.** One
   headline per request is 387 input tokens because the criteria dwarf the
@@ -211,29 +211,69 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   would be ~93 failing requests every 30 minutes, so the first non-200 aborts the
   pass and opens a breaker — an hour for auth and billing, five minutes for a
   rate limit.
+- **Every headline gets a reading; the threshold became a tier, not a gate.**
+  The gate left 601 of 1,332 headlines bare (12 October 2026), plainly
+  directional rows among them. Measured before changing it: 105 of those
+  rows, stratified, were **hand-labelled first** and the answers read after.
+  Where a headline had a direction, the side the model leaned to was right 60
+  of 65 times (92%), below the threshold included — the gate was discarding
+  mostly-correct answers. So 0.7+ is a *clear* badge ("Bullish") and anything
+  below is a *lean* ("Leans bullish": outlined, hollow dot). A confidently
+  neutral answer has no lean to read — its bullish/bearish residue is 0.00–0.04
+  at two decimal places, two of 105 exact ties — so each batch also asks a
+  **forced two-way question** (`l{n}` beside `d{n}`), used only when the main
+  answer is neutral. It moved the main answer no more than the model's own
+  run-to-run noise (4 of 105 choices changed against 2 for an identical re-run)
+  and costs 228 tokens a headline against 132. Option order was measured too:
+  reversing it flipped 6 of 105 and caught fewer bearish headlines, so it stays.
+  The cost is accepted noise, and it is **not neutral**: 33 of the 40 labelled
+  rows with no real direction lean bullish, because the press does — which is
+  why leans render, and are counted, apart from clear readings.
 - **A confidence threshold cannot fix a bad *page*, only a bad reading.** 30 of
   780 badged headlines were price-prediction and listicle pages — and **15 were
   badged at 0.9 or above** ("TON Price Prediction: Bears Hold the Cards" at
   1.00). The model is not wrong that the text reads bullish; the page is simply
-  not a story about a chain, so no cut reaches it — 0.9 would still keep half of
-  them while discarding 211 correct rows. `isNoiseHeadline` (the classifier's
-  existing `NOISE` gate, now exported) runs **before** the question is asked, so
-  those headlines are never badged and never sent upstream: 131 of ~1,250, a
-  standing 10% off the bill. Measured after: 750 badged, 0 on a listicle. The
-  general rule is that a threshold tunes *how sure* an answer must be and can
-  never express *which questions are worth asking* — when the failures are
-  confident, reach for a gate, not the dial.
+  not a story about a chain, so no cut reaches it. These used to be gated out
+  unasked; they are now asked and badged, but `isListicle` caps them at a
+  *lean* whatever the confidence — the gate's judgement about the page survives
+  as the badge's form. Pages that are **not articles at all** — currency
+  converters, price tickers, chart pages: 136 of 1,332, not one of them read as
+  directional — are dropped from the feed by `isNotArticle` before anything is
+  counted or asked. A threshold tunes *how sure* an answer must be and can never
+  express *which questions are worth asking*; when the failures are confident,
+  reach for a gate, not the dial.
 - **The badged bands, so a future threshold change is not a guess.** 0.90–1.00
   (569 rows) is excellent; 0.80–0.90 (142) good; 0.70–0.80 (69) about 80% and
   still catching real signal ("MegaETH Kills Mega Mafia After Backed Apps Desert
   the Network"); 0.60–0.70 (45) about 60%, where marketing and presale spam
   start. 0.7 is the elbow, which is why `DIRECTION_MIN_CONFIDENCE` sits there.
-- **What goes unbadged is mostly not news.** Of 488 unbadged, 160 are
-  confidently neutral and are currency converters, price-ticker pages and
+- **What used to go unbadged was mostly not news.** Of 488 unbadged, 160 were
+  confidently neutral: currency converters, price-ticker pages and
   name-collision noise the alias filter missed (an esports team called Aurora, a
-  tournament called BLAST). Around 264 are genuinely two-sided stories. That the
-  badge exposes how much of the feed is not news is a **feed** problem, not a
-  classifier one, and `NEWS_ALIASES` is where it would be fixed.
+  tournament called BLAST). The first two are now `isNotArticle`; the name
+  collisions still reach the feed and now carry a noisy lean, which is a
+  **feed** problem, not a classifier one — `NEWS_ALIASES` is where to fix it.
+- **The month's search is a sample, so the daily counts cannot be read off the
+  list.** Measured 12 October 2026: the feed held 5–30 headlines a day three
+  weeks back and 90–137 in the last week, and that slope is Google's ranking —
+  a search bounded to 16 September found 7 Cardano articles where the month's
+  search held none, and even for today the month's search held 1 Cardano
+  headline against 23 from a one-day search. So each refresh also runs
+  `when:1d` per chain (which is what makes today's list complete), everything
+  is recorded in a **tally** (`news:tally:v1`, title-keyed like the verdicts,
+  pruned to the window), and every ended day is **swept** once with Google
+  News' `after:`/`before:` bounds. Sweeps run behind the response via
+  `waitUntil`, six days per refresh, newest first; 255 day-bounded searches took
+  21.6s at six in flight with every one answered. A promptly swept day holds
+  180–330 headlines against the month's 40–130.
+- **A day-bounded search decays with the day's age, so sweeps must be prompt.**
+  Backfilling a month, Saturdays swept 1, 8, 15, 22 and 29 days late held 235,
+  133, 111, 57 and 31 headlines. The same question is only the same question at
+  the same age, so the tally stores how late each sweep ran and a day is drawn
+  complete only if swept within `SWEEP_FRESH_DAYS` (2). The cron warms news so
+  yesterday is swept every morning even when nobody reads; a backfilled or
+  missed day stays faded, because it undercounts. A first deploy therefore
+  shows a mostly faded month that fills in one day at a time.
 - **One direction per headline, not per chain.** Direction genuinely is
   chain-specific sometimes ("BTC slides as BNB bucks the selloff" is good for
   BNB), but only ~8% of headlines carry more than one chain, and the badge

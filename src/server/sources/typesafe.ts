@@ -53,6 +53,34 @@ import { fetchJson, mapLimit, UpstreamError } from "~/server/lib/http";
  * and take the same 0.67s. Accuracy does not suffer: among headlines where both
  * modes cleared 0.6, batched and single agreed on 13 of 13, and all three
  * disagreements were sub-0.6 in both.
+ *
+ * ## Every headline gets a reading now, and says how sure it is
+ *
+ * The threshold used to decide whether a badge appeared at all, and on 12
+ * October 2026 it left 601 of 1,332 headlines bare. That was measured rather
+ * than defended: 105 of them, stratified across the confident, the
+ * below-threshold, the neutral and the gated, were hand-labelled first and the
+ * model's answers read after. Where a headline had a direction, **the side it
+ * leaned to was right 92% of the time** — 60 of 65 — including below the
+ * threshold, where the old rule threw away answers that were mostly correct.
+ * So the threshold stopped being a gate and became a tier: at 0.7 and above a
+ * reading is *clear*, below it the badge says the headline *leans*.
+ *
+ * Neutral needed a second question. A confidently neutral answer leaves a
+ * bullish-versus-bearish residue of 0.00–0.04, which at two decimal places is
+ * rounding, not a lean — two of the 105 were exact ties. So each headline is
+ * also asked to pick a side outright, in the same request, and that answer is
+ * used only where the three-way question said neither. Measured against the
+ * labels it is as good as the alternatives tried — a five-level score, the
+ * same question with the options reversed — and adding it moved the main
+ * question by no more than the model's own run-to-run noise: the three-way
+ * choice changed on 4 of 105 against 2 of 105 for an identical re-run. It
+ * costs 228 tokens a headline rather than 132, about $0.013 for a cold corpus.
+ *
+ * The cost of the change is noise, accepted knowingly. Of the 40 labelled
+ * headlines with no real direction, 33 lean bullish, because the press does —
+ * so a count of leans overstates bullishness, and the interface keeps leans
+ * and clear readings apart for exactly that reason.
  */
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
@@ -64,37 +92,50 @@ const BATCH_SIZE = 20;
 const BATCH_CONCURRENCY = 6;
 
 /**
- * Below this, a headline gets no badge.
+ * At and above this, a directional answer is a *clear* reading; below it the
+ * badge says the headline leans.
  *
  * 0.6 is defensible on the measurement — the whole 0.60–0.90 band hand-checked
- * correct — but that sample skewed Solana-heavy, and 0.7 buys margin for a
- * single percentage point of coverage (68% → 67% of rows badged, against 24%
- * for the event badge it replaces).
+ * correct — but that sample skewed Solana-heavy, and 0.7 was the elbow. On the
+ * 105 labelled headlines, the 33 readings at or above it were right 30 of 31
+ * times where a direction existed, with two that had none.
  */
 export const DIRECTION_MIN_CONFIDENCE = 0.7;
 
-/** `neutral` is a real answer, and renders nothing. */
+/** `neutral` is a real answer to the main question. */
 type Choice = NewsDirection | "neutral";
 
-/** One cached answer: the raw choice and how sure the model was. */
+/**
+ * One cached answer: the three-way choice, how sure the model was of it, and
+ * the side the headline leans to when it has to pick one.
+ */
 interface Verdict {
   d: Choice;
   c: number;
+  l: NewsDirection;
+}
+
+/** How a headline reads, and whether that reading is clear or a lean. */
+export interface DirectionReading {
+  direction: NewsDirection;
+  clear: boolean;
 }
 
 /**
- * The direction a headline should render, or null.
+ * The reading a verdict renders as.
  *
- * Applied at read time rather than at classify time so that `neutral` and
- * low-confidence answers are still *stored* — otherwise every unbadgeable
- * headline would be a permanent cache miss, re-sent on every single refresh,
- * which is the opposite of the point.
+ * The three-way answer's own side wherever it named one, however unsure — so a
+ * badge never says "leans bearish" for a headline the main question called
+ * bullish — and the forced lean only where it said neither.
+ *
+ * Applied at read time rather than at classify time, so that a change of
+ * threshold re-tiers the corpus without re-buying it.
  */
-function renderable(verdict: Verdict | undefined): NewsDirection | null {
-  if (!verdict) return null;
-  if (verdict.d === "neutral") return null;
-  if (verdict.c < DIRECTION_MIN_CONFIDENCE) return null;
-  return verdict.d;
+function readingOf(verdict: Verdict): DirectionReading {
+  return {
+    direction: verdict.d === "neutral" ? verdict.l : verdict.d,
+    clear: verdict.d !== "neutral" && verdict.c >= DIRECTION_MIN_CONFIDENCE,
+  };
 }
 
 /* -------------------------------------------------------------- breaker ---- */
@@ -135,7 +176,8 @@ function openBreaker(status: number | undefined) {
  * Keyed on the title rather than the headline id because the id folds in the
  * outlet: the same story syndicated to three sites should cost one call.
  */
-const REDIS_KEY = `${CACHE_PREFIX}:news:direction:v1`;
+// v2: each verdict carries the forced lean as well as the three-way answer.
+const REDIS_KEY = `${CACHE_PREFIX}:news:direction:v2`;
 /** Refreshed on every write, so an active corpus never expires. */
 const REDIS_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -197,11 +239,12 @@ async function saveStore(store: Map<string, Verdict>, live: Set<string>) {
 /** Upstream answers are data, not types; a bad blob must not poison the map. */
 function isVerdict(value: unknown): value is Verdict {
   if (!value || typeof value !== "object") return false;
-  const { d, c } = value as { d?: unknown; c?: unknown };
+  const { d, c, l } = value as { d?: unknown; c?: unknown; l?: unknown };
   return (
     (d === "bullish" || d === "bearish" || d === "neutral") &&
     typeof c === "number" &&
-    Number.isFinite(c)
+    Number.isFinite(c) &&
+    (l === "bullish" || l === "bearish")
   );
 }
 
@@ -223,7 +266,22 @@ const CRITERIA = {
 };
 
 /**
+ * The forced choice. Bullish is listed first, as in the main question: the
+ * model leans slightly towards a first option, and reversing the order was
+ * measured and did not help — it flipped 6 of 105 answers and caught fewer of
+ * the genuinely bearish headlines, not more.
+ */
+const LEAN_CRITERIA = {
+  bullish: "Good news for that chain, or leans that way",
+  bearish: "Bad news for that chain, or leans that way",
+};
+
+/**
  * Classify one batch. Throws on any non-200 so the caller can stop the pass.
+ *
+ * Two questions per headline in one request: `d` is the three-way question the
+ * clear tier was measured on, `l` the forced lean. They share the state, so the
+ * second question costs its own tokens and not the headlines' again.
  *
  * `retries: 1` rather than the default 2: a pass that is going to fail should
  * fail quickly and open the breaker, and a pass that is going to succeed rarely
@@ -238,13 +296,23 @@ async function classifyBatch(
     .join("\n")}`;
 
   const questions = Object.fromEntries(
-    titles.map((_, index) => [
-      `h${index + 1}`,
-      {
-        type: "choice",
-        instructions: `For headline ${index + 1} only: good, bad or neither for the blockchain it is about?`,
-        criteria: CRITERIA,
-      },
+    titles.flatMap((_, index) => [
+      [
+        `d${index + 1}`,
+        {
+          type: "choice",
+          instructions: `For headline ${index + 1} only: good, bad or neither for the blockchain it is about?`,
+          criteria: CRITERIA,
+        },
+      ],
+      [
+        `l${index + 1}`,
+        {
+          type: "choice",
+          instructions: `For headline ${index + 1} only: is it good or bad news for the blockchain it is about? If it is mixed or neither, pick the side it leans towards.`,
+          criteria: LEAN_CRITERIA,
+        },
+      ],
     ]),
   );
 
@@ -259,16 +327,28 @@ async function classifyBatch(
   const out = new Map<string, Verdict>();
 
   titles.forEach((title, index) => {
-    const answer = response.answers?.[`h${index + 1}`];
-    const choice = answer?.choice;
-    const confidence = answer?.confidence;
+    const main = response.answers?.[`d${index + 1}`];
+    const choice = main?.choice;
+    const confidence = main?.confidence;
 
     if (choice !== "bullish" && choice !== "bearish" && choice !== "neutral") {
       return;
     }
     if (typeof confidence !== "number" || !Number.isFinite(confidence)) return;
 
-    out.set(keyOf(title), { d: choice, c: confidence });
+    // A missing lean is recoverable when the main answer already named a side,
+    // and is the one thing a neutral answer cannot do without — so a neutral
+    // with no lean is left unstored, to be asked again next pass.
+    const forced = response.answers?.[`l${index + 1}`]?.choice;
+    const lean =
+      forced === "bullish" || forced === "bearish"
+        ? forced
+        : choice !== "neutral"
+          ? choice
+          : null;
+    if (!lean) return;
+
+    out.set(keyOf(title), { d: choice, c: confidence, l: lean });
   });
 
   return out;
@@ -288,16 +368,20 @@ function keyOf(title: string): string {
 /* --------------------------------------------------------------- public ---- */
 
 /**
- * Directions for `titles`, by title.
+ * Readings for `titles`, by title.
  *
  * Never throws and never blocks on failure: the worst case is an empty map, and
- * a partial map is normal and correct. Titles already in the verdict cache cost
+ * a partial map is normal — a headline first seen while the breaker is open has
+ * no reading until the next pass. Titles already in the verdict cache cost
  * nothing, so a warm corpus issues zero requests.
+ *
+ * `titles` is also what the cache is pruned to, so it must be every title the
+ * caller still needs a reading for, not just the ones it is about to render.
  */
 export async function classifyDirections(
   titles: readonly string[],
-): Promise<Map<string, NewsDirection>> {
-  const out = new Map<string, NewsDirection>();
+): Promise<Map<string, DirectionReading>> {
+  const out = new Map<string, DirectionReading>();
 
   const apiKey = env.TYPESAFE_API_KEY;
   if (!apiKey) return out;
@@ -351,8 +435,8 @@ export async function classifyDirections(
   }
 
   for (const title of titles) {
-    const direction = renderable(store.get(keyOf(title)));
-    if (direction) out.set(title, direction);
+    const verdict = store.get(keyOf(title));
+    if (verdict) out.set(title, readingOf(verdict));
   }
 
   return out;
