@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { BitcoinCyclesChart } from "~/components/chart/bitcoin-cycles-chart";
-import { dailyAxis, LineChart } from "~/components/chart/line-chart";
+import {
+  dailyAxis,
+  LineChart,
+  type PointMarker,
+} from "~/components/chart/line-chart";
 import { RainbowChart } from "~/components/chart/rainbow-chart";
 import { MarketCycle } from "~/components/market/market-cycle";
 import { Explain } from "~/components/ui/explain";
@@ -26,13 +30,14 @@ import { api, type RouterOutputs } from "~/trpc/react";
 import { sectionId, type MarketSection } from "./sections";
 
 type Detail = RouterOutputs["market"]["detail"];
+type Search = RouterOutputs["market"]["search"];
 type Reading = NonNullable<Detail["brief"]["fearGreed"]["reading"]>;
 
 /**
  * The Market window: the market-cycle overlay, Bitcoin's four-year cycle with
- * every top and bottom marked, Fear & Greed since 2018, the 90-day altcoin
- * season index with every coin it counted, and the rainbow chart with the
- * halving — each opened at by its rail tile.
+ * every top and bottom marked, Fear & Greed since 2018, Google search interest
+ * since 2016, the 90-day altcoin season index with every coin it counted, and
+ * the rainbow chart with the halving — each opened at by its rail tile.
  *
  * ## Why this window never queries `market.brief`
  *
@@ -77,6 +82,12 @@ export function MarketWindow({
         ? 15_000
         : false;
     },
+  });
+  // Its own request, never prefetched, so it is safe out here; and its own so
+  // that a slow Google holds this one card rather than the window.
+  const search = api.market.search.useQuery(undefined, {
+    staleTime: 300_000,
+    enabled: open,
   });
   const reduced = useReducedMotion();
   const ready = Boolean(detail.data);
@@ -186,6 +197,8 @@ export function MarketWindow({
             )}
           </Card>
 
+          <SearchCard search={search.data} isLoading={search.isLoading} />
+
           <Card
             section="altseason"
             title="Altcoin season index · 90-day"
@@ -285,7 +298,7 @@ export function MarketWindow({
             )}
           </Card>
 
-          <Footer detail={d} />
+          <Footer detail={d} extra={search.data ? [search.data.source] : []} />
         </div>
       ) : (
         <div className="text-ink-muted grid h-full place-items-center px-8 text-center text-[13px]">
@@ -314,6 +327,7 @@ function Card({
   term,
   value,
   reading,
+  pending = false,
   children,
 }: {
   section: MarketSection;
@@ -321,6 +335,8 @@ function Card({
   term: GlossaryTerm;
   value: string | null;
   reading: Reading | null;
+  /** Still loading: say so, rather than that the source failed. */
+  pending?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -356,11 +372,248 @@ function Card({
         </p>
       ) : value === null ? (
         <p className="text-ink-faint mt-1.5 text-[12px]">
-          Source unreachable this run.
+          {pending ? "Loading…" : "Source unreachable this run."}
         </p>
       ) : null}
       {children && <div className="mt-4">{children}</div>}
     </section>
+  );
+}
+
+/** First of each month, UTC, for a monthly series starting at `start` (YYYY-MM). */
+function monthAxis(start: string, count: number): number[] {
+  const [year, month] = start.split("-").map(Number) as [number, number];
+  return Array.from({ length: count }, (_, i) =>
+    Date.UTC(year, month - 1 + i, 1),
+  );
+}
+
+const monthLabel = (month: string) => formatMonth(`${month}-01`);
+
+/**
+ * Google search interest: the average of five terms, drawn over the terms
+ * themselves.
+ *
+ * The average is the point and the terms are context, so it is the one line in
+ * colour and they are hairlines in ink — five more categorical hues would bury
+ * it, and the terms share no meaning that a hue could carry. A term is picked
+ * out from the table, not the legend: hovering or focusing its row draws it in
+ * the second series colour, and the table carries every value the lines do.
+ */
+function SearchCard({
+  search,
+  isLoading,
+}: {
+  search: Search | undefined;
+  isLoading: boolean;
+}) {
+  const [focus, setFocus] = useState<string | null>(null);
+  const s = search;
+  const latest = s?.latest ?? null;
+  // The latest month's position on the grid: the last month all five answered.
+  let at = -1;
+  if (s && latest) {
+    for (let i = s.composite.length - 1; i >= 0; i--) {
+      if (s.composite[i] != null) {
+        at = i;
+        break;
+      }
+    }
+  }
+  const yearBefore = (values: readonly (number | null)[]) =>
+    at >= 12 ? (values[at - 12] ?? null) : null;
+
+  const x = useMemo(() => (s ? monthAxis(s.start, s.months) : []), [s]);
+  const series = useMemo(() => {
+    if (!s) return [];
+    const terms = [...s.terms].sort(
+      (a, b) => Number(a.term === focus) - Number(b.term === focus),
+    );
+    return [
+      ...terms.map((t) => ({
+        id: t.term,
+        label: t.term,
+        values: t.values,
+        color:
+          t.term === focus ? "var(--color-series-3)" : "var(--color-ink-faint)",
+        width: t.term === focus ? 1.75 : 1,
+      })),
+      {
+        id: "average",
+        label: "Average of the five",
+        values: s.composite,
+        color: "var(--color-series-1)",
+        width: 2,
+      },
+    ];
+  }, [s, focus]);
+
+  // The average's peak, the low after it and where it is now: the three
+  // numbers the reading is made of, labelled where they sit.
+  const markers: PointMarker[] = [];
+  const point = (month: string, value: number) => ({
+    at: Date.parse(`${month}-01T00:00:00Z`),
+    y: value,
+    label: `${Math.round(value)} · ${monthLabel(month)}`,
+    color: "var(--color-series-1)",
+  });
+  if (s?.peak) markers.push(point(s.peak.month, s.peak.value));
+  if (s?.trough && s.trough.month !== latest?.month) {
+    markers.push({ ...point(s.trough.month, s.trough.value), below: true });
+  }
+  if (latest) {
+    markers.push({ ...point(latest.month, latest.value), align: "end" });
+  }
+
+  return (
+    <Card
+      section="search"
+      title="Search interest · monthly"
+      term="searchInterest"
+      value={latest ? String(Math.round(latest.value)) : null}
+      reading={s?.reading ?? null}
+      pending={isLoading}
+    >
+      {s && s.months > 1 ? (
+        <>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Stat
+              label="Month read"
+              value={latest ? monthLabel(latest.month) : "—"}
+            />
+            <Stat
+              label="A year earlier"
+              value={
+                yearBefore(s.composite) == null
+                  ? "—"
+                  : String(Math.round(yearBefore(s.composite)!))
+              }
+            />
+            <Stat
+              label="Peak"
+              value={
+                s.peak
+                  ? `${Math.round(s.peak.value)} · ${monthLabel(s.peak.month)}`
+                  : "—"
+              }
+            />
+            <Stat
+              label="Terms answering"
+              value={`${s.answered} of ${s.terms.length}`}
+            />
+          </dl>
+
+          <LineChart
+            className="mt-4"
+            x={x}
+            series={series}
+            references={[
+              { y: 60, label: "mania from 60" },
+              { y: 15, label: "cold below 15" },
+            ]}
+            markers={markers}
+            yDomain={[0, 100]}
+            formatY={(v) => v.toFixed(0)}
+            formatX={(ms) => formatMonth(new Date(ms).toISOString())}
+            legend={false}
+            height={260}
+            label="Google search interest since 2016: the average of five terms, each against its own busiest month since 2004"
+          />
+
+          <table className="mt-3 w-full text-[12px]">
+            <thead>
+              <tr className="text-ink-faint text-left text-[10px] font-medium tracking-[0.1em] uppercase">
+                <th className="py-1 pr-3 font-medium">Term</th>
+                <th className="py-1 pr-3 text-right font-medium">
+                  {latest ? monthLabel(latest.month) : "Latest"}
+                </th>
+                <th className="py-1 pr-3 text-right font-medium">
+                  A year earlier
+                </th>
+                <th className="py-1 text-right font-medium">
+                  Its busiest month
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.terms.map((t) => (
+                <tr
+                  key={t.term}
+                  tabIndex={0}
+                  onMouseEnter={() => setFocus(t.term)}
+                  onMouseLeave={() => setFocus(null)}
+                  onFocus={() => setFocus(t.term)}
+                  onBlur={() => setFocus(null)}
+                  className={cn(
+                    "border-hairline cursor-default border-t outline-none",
+                    focus === t.term ? "text-ink bg-raised" : "text-ink-muted",
+                  )}
+                >
+                  <td className="py-1.5 pr-3">
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="h-0.5 w-3 rounded-full"
+                        style={{
+                          background:
+                            focus === t.term
+                              ? "var(--color-series-3)"
+                              : "var(--color-ink-faint)",
+                        }}
+                        aria-hidden
+                      />
+                      {t.term}
+                    </span>
+                  </td>
+                  <td className="tnum py-1.5 pr-3 text-right">
+                    {at >= 0 && t.values[at] != null ? t.values[at] : "—"}
+                  </td>
+                  <td className="tnum py-1.5 pr-3 text-right">
+                    {yearBefore(t.values) ?? "—"}
+                  </td>
+                  <td className="py-1.5 text-right">
+                    {t.peak ? monthLabel(t.peak) : "—"}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-hairline text-ink border-t font-medium">
+                <td className="py-1.5 pr-3">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="h-0.5 w-3 rounded-full"
+                      style={{ background: "var(--color-series-1)" }}
+                      aria-hidden
+                    />
+                    Average of the five
+                  </span>
+                </td>
+                <td className="tnum py-1.5 pr-3 text-right">
+                  {latest ? Math.round(latest.value) : "—"}
+                </td>
+                <td className="tnum py-1.5 pr-3 text-right">
+                  {yearBefore(s.composite) == null
+                    ? "—"
+                    : Math.round(yearBefore(s.composite)!)}
+                </td>
+                <td className="py-1.5 text-right">
+                  {s.peak ? monthLabel(s.peak.month) : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p className="text-ink-faint mt-2 text-[11px] leading-relaxed">
+            Worldwide Google web search. Each term is scaled by Google so its
+            busiest month since 2004 reads 100, which makes it comparable with
+            its own past and not with the other terms — and none of it is a
+            count of searches. The month in progress is left out until it ends,
+            because Google reports a partial month scaled down. Hover a term to
+            pick out its line.
+          </p>
+        </>
+      ) : isLoading ? (
+        <div aria-hidden style={{ height: 260 }} />
+      ) : null}
+    </Card>
   );
 }
 
@@ -712,7 +965,14 @@ const STATUS_TONE = {
   unavailable: "var(--color-critical)",
 } as const;
 
-function Footer({ detail }: { detail: Detail }) {
+function Footer({
+  detail,
+  extra,
+}: {
+  detail: Detail;
+  /** Sources fetched on their own requests, such as search interest. */
+  extra: Detail["sources"];
+}) {
   return (
     <div className="border-hairline grid gap-6 border-t pt-5 text-[11.5px] lg:grid-cols-2">
       <div>
@@ -720,7 +980,7 @@ function Footer({ detail }: { detail: Detail }) {
           Sources
         </div>
         <ul className="mt-2 space-y-1.5">
-          {detail.sources.map((source) => (
+          {[...detail.sources, ...extra].map((source) => (
             <li key={source.id} className="flex gap-2">
               <span
                 className="mt-1.25 size-1.5 shrink-0 rounded-full"

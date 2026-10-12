@@ -16,10 +16,14 @@ import type { RouterOutputs } from "~/trpc/react";
 type Brief = RouterOutputs["market"]["brief"];
 
 /**
- * The rail: five market signals beside the hero and alpha map, each a figure,
- * its reading, one line of context and a full-width visual. Fear & Greed, the
- * 90-day altcoin season index, the rainbow band, where Bitcoin sits in its
- * four-year cycle, the halving.
+ * The rail: six market signals beside the hero and alpha map, each a figure,
+ * its reading, one line of context and a full-width visual. Fear & Greed,
+ * Google search interest, the 90-day altcoin season index, the rainbow band,
+ * where Bitcoin sits in its four-year cycle, the halving.
+ *
+ * Search interest sits next to Fear & Greed because the two answer the same
+ * question from opposite ends — how heated the market is, read once from
+ * prices and positioning and once from what the public is typing.
  *
  * The rail is market context only. This app's own findings — the chain
  * most undervalued, how many are undervalued — belong to the hero, and capital
@@ -63,7 +67,7 @@ export function MarketRail({
       aria-label="Market indicators"
       className={cn(
         "grid gap-3",
-        // Phones: one row that scrolls sideways and snaps, instead of five tiles
+        // Phones: one row that scrolls sideways and snaps, instead of six tiles
         // stacked for 800px before the map. Tablets and up: a grid.
         "max-sm:scroll-slim max-sm:-mx-4 max-sm:snap-x max-sm:snap-mandatory max-sm:auto-cols-[minmax(280px,82%)] max-sm:grid-flow-col max-sm:overflow-x-auto max-sm:px-4 max-sm:pb-1 max-sm:[&>*]:snap-start",
         "sm:grid-cols-2 lg:grid-cols-3",
@@ -93,6 +97,31 @@ export function MarketRail({
 
       <IndicatorTile
         settleIndex={1}
+        label="Search interest"
+        term="searchInterest"
+        value={
+          b?.searchInterest.value == null
+            ? null
+            : String(Math.round(b.searchInterest.value))
+        }
+        reading={b?.searchInterest.reading?.label ?? null}
+        detail={
+          b?.searchInterest.month
+            ? `${formatMonth(`${b.searchInterest.month}-01`)}${
+                b.searchInterest.peak
+                  ? ` · peak ${Math.round(b.searchInterest.peak.value)} in ${formatMonth(`${b.searchInterest.peak.month}-01`)}`
+                  : ""
+              }`
+            : null
+        }
+        series={b?.searchInterest.spark ?? null}
+        seriesStep="month"
+        onOpen={() => openMarket("search")}
+        testId="search"
+      />
+
+      <IndicatorTile
+        settleIndex={2}
         label="Altcoin season · 90d"
         term="altcoinSeason"
         value={
@@ -112,7 +141,7 @@ export function MarketRail({
       />
 
       <IndicatorTile
-        settleIndex={2}
+        settleIndex={3}
         label="Rainbow band"
         term="rainbowBand"
         value={
@@ -139,7 +168,7 @@ export function MarketRail({
       />
 
       <IndicatorTile
-        settleIndex={3}
+        settleIndex={4}
         label={
           cyc
             ? bear
@@ -172,7 +201,7 @@ export function MarketRail({
       />
 
       <IndicatorTile
-        settleIndex={4}
+        settleIndex={5}
         label="Next halving"
         term="halving"
         value={b?.halving ? formatDuration(b.halving.daysRemaining) : null}

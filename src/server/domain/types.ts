@@ -333,15 +333,50 @@ export interface NewsFeed {
      */
     category: NewsCategory | null;
     /**
-     * Whether the headline reads bullish or bearish, or null where the reading
-     * was not confident enough, said neither, or was unavailable. See
-     * `sources/typesafe.ts`.
+     * Whether the headline reads bullish or bearish. Null only where no
+     * reading exists — the classifier is unavailable, or has not reached this
+     * headline yet. See `sources/typesafe.ts`.
      */
     direction: NewsDirection | null;
+    /**
+     * True when the direction is a lean rather than a clear reading: the model
+     * was unsure, or the page is a prediction or listicle. False when there is
+     * no direction.
+     */
+    leaning: boolean;
   }[];
   /** How much each chain was written about in the window. */
   coverage: { chain: string; found: number; shown: number }[];
+  /** Null when the news fetch failed outright. */
+  daily: NewsDaily | null;
   windowDays: number;
+}
+
+/**
+ * One day's headlines by how they read: bullish clear, bullish leaning,
+ * bearish clear, bearish leaning.
+ */
+export type NewsDayCount = [number, number, number, number];
+
+/**
+ * Headlines counted by the day they were published.
+ *
+ * Counted from a tally that keeps every headline the searches returned, not
+ * from `headlines`, which is the month's search as it stands now and holds far
+ * fewer of each past day than were published. See `sources/news.ts`.
+ */
+export interface NewsDaily {
+  /** UTC days, oldest first, ending today. */
+  days: string[];
+  /**
+   * Per day, whether it was searched on its own within two days of ending. A
+   * day searched later, or not yet, undercounts — Google returns less of older
+   * days — and today never has been.
+   */
+  complete: boolean[];
+  all: NewsDayCount[];
+  /** Chains with at least one counted headline. */
+  byChain: Record<string, NewsDayCount[]>;
 }
 
 /**

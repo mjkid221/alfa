@@ -11,7 +11,7 @@ import {
   SCALE_WEIGHTS,
   SIZE_FLOOR,
 } from "~/server/domain/score";
-import type { ChainMultiples } from "~/server/domain/types";
+import type { ChainMultiples, NewsDayCount } from "~/server/domain/types";
 import { fetchTokenUnlockSchedule } from "~/server/sources/defillama-emissions";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 
@@ -145,6 +145,15 @@ export const chainsRouter = createTRPCRouter({
         ...feed,
         headlines: feed.headlines.filter((item) => item.chains.includes(chain)),
         coverage: feed.coverage.filter((entry) => entry.chain === chain),
+        // The chain's own counts only; the other 84 chains' would ride along
+        // on every chain page for nothing.
+        daily: feed.daily && {
+          ...feed.daily,
+          all:
+            feed.daily.byChain[chain] ??
+            feed.daily.all.map((): NewsDayCount => [0, 0, 0, 0]),
+          byChain: {},
+        },
       };
     }),
 

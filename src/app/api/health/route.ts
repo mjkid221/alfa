@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { getSnapshot } from "~/server/domain/aggregate";
+import { getNews, getSnapshot } from "~/server/domain/aggregate";
 import { getMarketBrief } from "~/server/domain/market";
 import { settle } from "~/server/lib/http";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+/**
+ * 300, the Hobby ceiling, not 120: the news refresh this warms hands a sweep of
+ * yesterday's headlines to `waitUntil`, which counts toward the same budget —
+ * about 85 searches and a classification pass after the response.
+ */
+export const maxDuration = 300;
 
 /**
  * Liveness plus a compact view of the model's output, useful for verifying a
@@ -16,11 +21,15 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    // The market brief rides along so the cron warms both caches. Its own
-    // failure never fails the health check; the snapshot is what `ok` means.
-    const [{ chains, meta }, market] = await Promise.all([
+    // The market brief rides along so the cron warms both caches, search
+    // interest included. So do the headlines: their daily counts rely on every
+    // ended day being searched once, and this is the one refresh that happens
+    // whether or not anyone opens the window. Neither failure fails the health
+    // check; the snapshot is what `ok` means.
+    const [{ chains, meta }, market, news] = await Promise.all([
       getSnapshot(),
       settle("market", getMarketBrief({ deadlineMs: 40_000 })),
+      settle("news", getNews()),
     ]);
 
     const top = chains
@@ -96,6 +105,13 @@ export async function GET(request: Request) {
       valueTraps: chains.filter((c) => c.valueTrapRisk).length,
       market: market
         ? { warming: market.warming, sources: market.sources }
+        : null,
+      news: news
+        ? {
+            headlines: news.headlines.length,
+            withDirection: news.headlines.filter((h) => h.direction).length,
+            daysComplete: news.daily?.complete.filter(Boolean).length ?? 0,
+          }
         : null,
     });
   } catch (error) {

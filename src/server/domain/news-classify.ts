@@ -62,32 +62,72 @@ export const NEWS_CATEGORIES: Record<
   funding: { label: "Funding", tone: "positive" },
 };
 
-/** Explainers, listicles and price-ticker pages. Not events at all. */
-const NOISE =
-  /(price prediction|current price of|price today|live price|what is |how to |page \d+ of|forecast \d{4}|best .{0,20}(crypto|coin|altcoin)s? to buy|top \d+ (crypto|coin|altcoin|dapp))/i;
+/**
+ * Pages that are not articles: currency converters, price tickers, chart and
+ * price-data pages. Google News indexes them as news and they have no headline
+ * in any useful sense — "Convert 1 ISK (Icelandic Króna) to MNT (Mongolian
+ * Tugrik)" is not something to read, or to call bullish.
+ *
+ * `price today` only where a separator or "in" follows it, because "Ethereum
+ * Price Today: ETH Slips Below $2,600 as Ether ETF Outflow Streak Hits Six
+ * Days" is a real story and "Hedera price today, HBAR to USD chart" is not.
+ */
+const NOT_ARTICLE = new RegExp(
+  [
+    String.raw`^convert [\d.,]+ `,
+    String.raw`\bprice \([a-z0-9]+(?: [a-z]{3})?\)$`,
+    String.raw`\bprice \([a-z0-9]+/[a-z]{3}\)`,
+    String.raw`\blive (price|charts?)\b`,
+    String.raw`\bprice today(?= ?[|,]| in )`,
+    String.raw`\bprice in (india|inr)\b`,
+    String.raw`\bprice: [a-z]+/[a-z]+$`,
+    String.raw`\bcurrent price of\b`,
+    String.raw`\b(interactive price chart|price data|historical data for)\b`,
+    String.raw`^exchange .+ for .+\)$`,
+    String.raw`\btoken supply is\b`,
+  ].join("|"),
+  "i",
+);
 
 /**
- * A page that should carry no badge of any kind, whatever it appears to say.
+ * A page to leave out of the feed entirely.
  *
- * Exported because the direction classifier needs the same gate, and needs it
- * for a reason a confidence threshold cannot serve. Measured on the live feed:
- * 30 of 780 badged headlines were price-prediction and listicle pages, and
- * **15 of those were badged at 0.9 confidence or above** — "TON Price
- * Prediction: Bears Hold the Cards" at 1.00, "MultiversX Price Prediction:
- * EGLD Surges 55%" at 1.00. The model is not wrong that the text reads
- * bullish; the page is simply not a story about the chain. So no threshold can
- * remove these — raising the cut to 0.9 would still keep half of them while
- * throwing away 211 headlines that are right — and the gate has to be a
- * separate judgement about the *page*, applied before the question is asked.
- *
- * It also means these are never sent upstream, which is the cheap half.
- *
- * It is a blunt instrument and known to cost a little: "Chainflip Hack on
- * Tron: How to Check Whether Your USDT Swap Is Still Stuck" matches on "how
- * to" and is a real bearish story. One or two rows against thirty is the trade
- * being made, deliberately.
+ * Measured 12 October 2026: 136 of 1,332 headlines, and not one of them a row
+ * the direction classifier had read as either bullish or bearish — 99 it
+ * called neutral, the other 37 sat behind the listicle gate. They are what made
+ * "every headline gets a reading" look impossible, and they are not headlines:
+ * removing them is a fix to the feed, which is where the alias filter already
+ * removes stories that never name their chain.
  */
-export function isNoiseHeadline(title: string): boolean {
+export function isNotArticle(title: string): boolean {
+  return NOT_ARTICLE.test(title);
+}
+
+/** Price predictions, explainers and listicles. Pages, not events. */
+const NOISE =
+  /(price prediction|what is |how to |page \d+ of|forecast \d{4}|best .{0,20}(crypto|coin|altcoin)s? to buy|top \d+ (crypto|coin|altcoin|dapp))/i;
+
+/**
+ * A page that reads in a direction without reporting anything: a price
+ * prediction, an explainer, a buying guide.
+ *
+ * These used to carry no badge at all, gated before the question was asked,
+ * because the model reads them confidently: 30 of 780 badged headlines were
+ * pages like these, and 15 of those cleared 0.9 — "TON Price Prediction: Bears
+ * Hold the Cards" at 1.00. No threshold could reach them, since the model is
+ * not wrong about the text; the page is just not a story about the chain.
+ *
+ * They are badged now, because a reader looking at "Starknet Price Prediction:
+ * STRK Rallies 39% as Network Weighs Layer 1 Shift" sees a bullish headline and
+ * an empty badge reads as a bug. What survives of the old judgement is that
+ * they can never be a *clear* reading: however sure the model is, the badge
+ * says the headline leans. See `sources/typesafe.ts`.
+ *
+ * It is a blunt instrument: "Chainflip Hack on Tron: How to Check Whether Your
+ * USDT Swap Is Still Stuck" matches on "how to" and is a real bearish story,
+ * which now costs it nothing worse than reading as a lean.
+ */
+export function isListicle(title: string): boolean {
   return NOISE.test(title);
 }
 
@@ -165,7 +205,7 @@ const FUNDING =
  */
 export function classifyHeadline(title: string): NewsCategory | null {
   if (!title) return null;
-  if (NOISE.test(title)) return null;
+  if (NOISE.test(title) || NOT_ARTICLE.test(title)) return null;
   if (CONTRAST.test(title)) return null;
   if (RESOLUTION.test(title)) return null;
 

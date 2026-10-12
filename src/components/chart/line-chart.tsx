@@ -130,6 +130,8 @@ export function LineChart({
   onHoverChange,
   tooltip = true,
   xAxis = true,
+  legend = true,
+  formatX,
 }: {
   x: readonly number[];
   series: readonly LineSeries[];
@@ -155,6 +157,10 @@ export function LineChart({
   onHoverChange?: (index: number | null) => void;
   tooltip?: boolean;
   xAxis?: boolean;
+  /** Off when the caller draws its own key, as a card with a term table does. */
+  legend?: boolean;
+  /** The tooltip's date. Daily by default; a monthly series says the month. */
+  formatX?: (ms: number) => string;
 }) {
   const { ref, width } = useMeasure<HTMLDivElement>();
   const [localHover, setLocalHover] = useState<number | null>(null);
@@ -736,7 +742,9 @@ export function LineChart({
           }}
         >
           <div className="text-ink-muted tnum">
-            {formatAxisDate(x[hoverIndex]!, "days")}
+            {formatX
+              ? formatX(x[hoverIndex]!)
+              : formatAxisDate(x[hoverIndex]!, "days")}
           </div>
           {series.map((s, i) => {
             const v = s.values[hoverIndex];
@@ -761,7 +769,7 @@ export function LineChart({
         </div>
       )}
 
-      {series.length > 1 && (
+      {legend && series.length > 1 && (
         <div className="border-hairline mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t pt-2 text-[11px]">
           {series.map((s, i) => (
             <span

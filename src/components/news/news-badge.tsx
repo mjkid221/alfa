@@ -7,13 +7,20 @@ import type { NewsDirection } from "~/server/domain/types";
 /**
  * How a headline reads.
  *
- * The badge says **bullish or bearish**. It used to name the event instead —
- * "Exploit", "Listing", "Price up" — because the local classifier was measured
- * doing both and was only reliable at the first: a headline says what happened
- * more reliably than it says what that means. A model reads the second half
- * well enough to show, and more to the point knows when it does not, so the
- * direction is shown only above a confidence threshold. See
- * `server/sources/typesafe.ts` for the measurements.
+ * The badge says **bullish or bearish**, on every headline the classifier has
+ * read. It used to appear only above a confidence threshold, and that left a
+ * third of the feed bare, including headlines that plainly lean one way; the
+ * measurement in `server/sources/typesafe.ts` found the lean right 92% of the
+ * time where a headline had one. So the threshold now picks the badge's form
+ * rather than whether it exists:
+ *
+ *   Bullish        a clear reading — filled, solid dot
+ *   Leans bullish  the model was unsure, or the page is a prediction or
+ *                  listicle — outlined, hollow dot, and the word says so
+ *
+ * Three cues rather than one, because a lean is the noise this change accepted
+ * and the reader should be able to discount it without a legend: the wording,
+ * the hollow glyph and the missing fill all say the same thing.
  *
  * `category` is the fallback, not a second badge. The direction comes from the
  * one paid source in this app, so it is absent whenever the key is unset, out
@@ -27,27 +34,42 @@ import type { NewsDirection } from "~/server/domain/types";
  */
 export function NewsBadge({
   direction,
+  leaning,
   category,
 }: {
   direction: NewsDirection | null;
+  leaning: boolean;
   category: NewsCategory | null;
 }) {
-  const { label, negative } = resolve(direction, category) ?? {};
+  const { label, negative, lean } = resolve(direction, leaning, category) ?? {};
   if (!label) return null;
 
   const color = negative ? "var(--color-critical)" : "var(--color-good)";
 
+  // The outline is an inset shadow, not a border, so both forms are the same
+  // size: a border would make every leaning row 2px taller than its skeleton.
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10.5px] font-medium"
-      style={{
-        color,
-        background: `color-mix(in oklab, ${color} 12%, transparent)`,
-      }}
+      style={
+        lean
+          ? {
+              color,
+              boxShadow: `inset 0 0 0 1px color-mix(in oklab, ${color} 38%, transparent)`,
+            }
+          : {
+              color,
+              background: `color-mix(in oklab, ${color} 12%, transparent)`,
+            }
+      }
     >
       <span
-        className="size-1 rounded-full"
-        style={{ background: color }}
+        className="size-1.5 rounded-full"
+        style={
+          lean
+            ? { boxShadow: `inset 0 0 0 1px ${color}` }
+            : { background: color }
+        }
         aria-hidden
       />
       {label}
@@ -57,18 +79,25 @@ export function NewsBadge({
 
 function resolve(
   direction: NewsDirection | null,
+  leaning: boolean,
   category: NewsCategory | null,
 ) {
   if (direction) {
+    const side = direction === "bearish" ? "bearish" : "bullish";
     return {
-      label: direction === "bearish" ? "Bearish" : "Bullish",
+      label: leaning
+        ? `Leans ${side}`
+        : side === "bearish"
+          ? "Bearish"
+          : "Bullish",
       negative: direction === "bearish",
+      lean: leaning,
     };
   }
 
   if (category) {
     const { label, tone } = NEWS_CATEGORIES[category];
-    return { label, negative: tone === "negative" };
+    return { label, negative: tone === "negative", lean: false };
   }
 
   return null;

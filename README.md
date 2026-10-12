@@ -337,11 +337,12 @@ guessing would be worse than admitting it.
 
 No free crypto news API exists: CoinGecko's is Pro-only, CryptoPanic wants a key.
 Google News publishes any search as RSS without one, which is what makes
-per-chain coverage possible. Roughly 1,300 articles across 44 chains.
+per-chain coverage possible. Roughly 1,400 articles across 78 chains, from two
+searches per chain: the last thirty days, and the last day on its own.
 
 #### Bullish or bearish, and how that became showable
 
-Each headline can carry a **Bullish** or **Bearish** badge. No article is read:
+Every headline carries a **Bullish** or **Bearish** badge. No article is read:
 Google News RSS carries a title and no body, so this is a reading of the headline
 text and nothing else. It is not a forecast, it is not advice, and it never
 touches the valuation model.
@@ -366,18 +367,55 @@ bearish. Of 60 live headlines, all fourteen in the 0.60–0.90 band were correct
 a hand check, including "Upgrade Draws $9.11M Whale Longs *Despite* Bearish
 Futures Market"; every error found sat below 0.6.
 
-So the badge shows a direction only above a confidence threshold, and roughly a
-third of headlines get none. **That is the mechanism working, not failing** — the
-blank is the model declining to guess, which is the thing the first version could
-not do. Coverage went from 24% to about two thirds of rows.
+The first version of the badge used that threshold as a gate: a direction showed
+only above 0.7, and roughly a third of headlines got none. That left plainly
+directional rows bare, so it was measured before it was changed. 105 of the bare
+and badged rows were hand-labelled first and the model's answers read after:
+where a headline had a direction at all, **the side it leaned to was right 92% of
+the time**, below the threshold included. The gate was throwing away answers that
+were mostly right.
+
+So the threshold now decides the badge's form rather than whether it exists.
+Above it the badge is a clear **Bullish**; below it, an outlined **Leans
+bullish**. Where the model calls a headline neither, a second, forced question in
+the same request picks the side it leans to. Price predictions and listicles are
+badged too, but never clear, however sure the model is: a confident reading of
+one is a confident reading of marketing copy. Pages that are not articles at all —
+currency converters, price tickers, chart pages — are dropped from the feed, which
+is 136 of 1,332 rows that never had a direction to give.
+
+The cost is noise, accepted on purpose, and the noise leans bullish: of the
+labelled headlines with no real direction, 33 of 40 leaned that way, because the
+press does. That is why leans look different and are counted apart.
 
 This is the one paid source in the app, and it is deliberately not load-bearing:
 verdicts are cached per headline, a failure trips a breaker rather than retrying,
 and if the key is absent or out of credit the badge quietly falls back to naming
 the event from the original keyless classifier.
 
-Positive badges outrun negative ones about two to one. That is the press, not the
-market — outlets write "surges" far more often than "drops".
+Positive badges outrun negative ones about three to one. That is the press, not
+the market — outlets write "surges" far more often than "drops".
+
+#### Bullish and bearish, counted by day
+
+The Headlines window opens on a count of bullish and bearish headlines for each of
+the last thirty days, leans stacked apart from clear readings, narrowed to a chain
+when one is chosen. It is **not** counted from the list. The thirty-day search is a
+relevance sample of the month, not a record of it: it held 5 to 30 headlines a day
+three weeks back and 90 to 137 a day in the last week, and searching a single past
+day directly found 7 Cardano articles for 16 September where the month's search
+held none. Counted off the list, the chart would have drawn a news boom that was
+really Google's ranking.
+
+So every headline either search returns goes into a tally kept for the length of
+the window, and every day, once it ends, is searched on its own with Google News'
+date bounds — one search per chain. That only makes days comparable if each is
+searched at the same age, because Google returns less of a day the older it gets:
+Saturdays searched one, two, three and four weeks late held 133, 111, 57 and 31
+headlines, against 235 for the one searched the next morning. So each day is
+searched the day after it ends — by the daily cron if nobody has opened the window
+— and a day searched later than that, or not yet, is drawn faded and says it
+undercounts. A promptly searched day holds 180 to 330 headlines.
 
 #### Only headlines that name the chain
 
@@ -851,15 +889,16 @@ pnpm lint        # eslint
 
 ## Market context
 
-Beside the ranking sits a rail of five market signals that read at a glance —
-Fear & Greed, the 90-day altcoin season index, the Bitcoin rainbow band, where
-Bitcoin sits in its four-year cycle, and the halving countdown. A **Market**
+Beside the ranking sits a rail of six market signals that read at a glance —
+Fear & Greed, Google search interest, the 90-day altcoin season index, the Bitcoin
+rainbow band, where Bitcoin sits in its four-year cycle, and the halving countdown. A **Market**
 window holds the rest: **the market cycle** (since 2018, Bitcoin's price
 coloured by Fear & Greed and the altcoin market cap coloured by the altcoin
 season index, one time axis and one crosshair); **Bitcoin's four-year cycle** (every top and bottom found from the
 price record, power-law curves through each, and the window past spacing implies
-for the next bottom and top); Fear & Greed since 2018; every coin the altcoin
-season index counted; and the rainbow chart. **None of it feeds the model**:
+for the next bottom and top); Fear & Greed since 2018; **search interest** since
+2016, the average of five search terms drawn over the terms themselves; every coin
+the altcoin season index counted; and the rainbow chart. **None of it feeds the model**:
 `score.ts` and `aggregate.ts` import nothing from `market*`.
 
 Everything comes from free, keyless endpoints:
@@ -871,6 +910,7 @@ Everything comes from free, keyless endpoints:
 | The top 100 by market cap, with circulating supply                       | CoinGecko                                                                 |
 | Prices for those 100 coins — daily for 15 months, weekly since late 2017 | DefiLlama coins API (the altcoin season index and the altcoin market cap) |
 | Block height                                                             | mempool.space, blockstream.info                                           |
+| Search interest in five terms, monthly since 2004                        | Google Trends, through the endpoints its own page calls                   |
 
 Honest labels: the **altcoin season index is CoinMarketCap's 90-day definition**
 computed on real history, with the number of coins compared shown beside it;
@@ -882,3 +922,15 @@ for expensive, each band named at the chart's edge. The regression is fitted to 
 before 2025 so the band edges do not drift daily, and the nine bands are equal
 log-steps spanning the middle 99% of its residuals, so the price has been inside
 the rainbow on 99% of days.
+
+**Search interest** is the mean of "bitcoin", "crypto", "buy crypto", "buy
+bitcoin" and "coinbase" — terms chosen because each existed through every cycle,
+so the average means the same thing in 2017 as today. Google publishes no search
+counts: it scales each term so its busiest month since 2004 reads 100, so a term
+compares with its own past and never with another term. The month in progress is
+left out, because Google reports a partial month scaled down, and the named zones
+are cut where the average stood at recorded turns — both bear-market lows below
+15, both manias above 60 — which is four cycles of evidence, not a law. There is
+no official keyless API; the page's own endpoints answer once a first refusal has
+handed out a session cookie, and each term is cached for a day with a month of
+grace, because Google is quick to refuse data-centre addresses.

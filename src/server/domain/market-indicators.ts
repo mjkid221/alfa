@@ -7,6 +7,7 @@ import {
 import {
   ALTCOIN_SEASON_ZONES,
   FEAR_GREED_ZONES,
+  SEARCH_HEAT_ZONES,
   zoneOf,
 } from "~/lib/market-zones";
 import { linearFit } from "./score";
@@ -22,6 +23,8 @@ import type {
   IntervalStats,
   RainbowSection,
   Reading,
+  SearchMonth,
+  SearchTermHistory,
   Tone,
   TopMarketRow,
 } from "./market-types";
@@ -1102,4 +1105,145 @@ export function fitTopModels(
     }
   }
   return { models, defaultModel };
+}
+
+/* ------------------------------------------------------- search interest ---- */
+
+/**
+ * The first month search interest is drawn and read from. Before 2016 every
+ * term is near zero — the 2013 run read 5 on the composite — so earlier months
+ * would add width to the chart and nothing to the reading.
+ */
+export const SEARCH_FROM = "2016-01";
+
+/** Months since year zero, so months can be subtracted. */
+const monthIndex = (month: string) => {
+  const [year, m] = month.split("-").map(Number) as [number, number];
+  return year * 12 + (m - 1);
+};
+
+const monthFromIndex = (index: number) =>
+  `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+
+const longMonth = (month: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-01T00:00:00Z`));
+
+/**
+ * Every term on one monthly grid from `SEARCH_FROM` to the last month all the
+ * answered terms report, and their mean on the months every expected term has
+ * a value.
+ *
+ * The composite is withheld wherever a term is missing rather than averaged
+ * over the ones that answered: the zones were calibrated on all five, and a
+ * mean of four is a different number that would read against the same cuts.
+ */
+export function searchGrid(
+  histories: readonly (SearchTermHistory | null)[],
+  expected: readonly string[],
+): {
+  months: string[];
+  terms: { term: string; values: (number | null)[]; peak: string | null }[];
+  composite: (number | null)[];
+} | null {
+  const answered = histories.filter(
+    (history): history is SearchTermHistory =>
+      history !== null && history.values.length > 0,
+  );
+  if (answered.length === 0) return null;
+
+  const end = Math.min(
+    ...answered.map((h) => monthIndex(h.start) + h.values.length - 1),
+  );
+  const first = monthIndex(SEARCH_FROM);
+  if (end < first) return null;
+  const months = Array.from({ length: end - first + 1 }, (_, i) =>
+    monthFromIndex(first + i),
+  );
+
+  const terms = expected.map((term) => {
+    const history = answered.find((h) => h.term === term);
+    if (!history) {
+      return { term, values: months.map(() => null), peak: null };
+    }
+    const offset = monthIndex(history.start);
+    const peakAt = history.values.indexOf(Math.max(...history.values));
+    return {
+      term,
+      values: months.map(
+        (month) => history.values[monthIndex(month) - offset] ?? null,
+      ),
+      peak: monthFromIndex(offset + peakAt),
+    };
+  });
+
+  const composite = months.map((_, i) => {
+    let sum = 0;
+    for (const term of terms) {
+      const value = term.values[i];
+      if (value == null) return null;
+      sum += value;
+    }
+    return Math.round((sum / terms.length) * 10) / 10;
+  });
+
+  return { months, terms, composite };
+}
+
+/** The composite's highest month, and its lowest month after that. */
+export function searchExtremes(
+  months: readonly string[],
+  composite: readonly (number | null)[],
+): { peak: SearchMonth | null; trough: SearchMonth | null } {
+  let peakAt = -1;
+  composite.forEach((value, i) => {
+    if (value != null && (peakAt === -1 || value > composite[peakAt]!)) {
+      peakAt = i;
+    }
+  });
+  if (peakAt === -1) return { peak: null, trough: null };
+
+  let troughAt = -1;
+  for (let i = peakAt + 1; i < composite.length; i++) {
+    const value = composite[i];
+    if (value != null && (troughAt === -1 || value < composite[troughAt]!)) {
+      troughAt = i;
+    }
+  }
+
+  return {
+    peak: { month: months[peakAt]!, value: composite[peakAt]! },
+    trough:
+      troughAt === -1
+        ? null
+        : { month: months[troughAt]!, value: composite[troughAt]! },
+  };
+}
+
+export function searchHeatReading(
+  latest: SearchMonth,
+  peak: SearchMonth | null,
+  trough: SearchMonth | null,
+): Reading {
+  const value = Math.round(latest.value);
+  const zone = zoneOf(SEARCH_HEAT_ZONES, value);
+  const lead = `${longMonth(latest.month)} read ${value}, which is ${zone.label.toLowerCase()}.`;
+
+  let context = "";
+  if (peak && peak.month !== latest.month) {
+    const top = `${longMonth(peak.month)} peak`;
+    const high = Math.round(peak.value);
+    if (trough?.month === latest.month) {
+      context = ` That is the lowest since the ${top} of ${high}.`;
+    } else if (trough) {
+      context = ` The ${top} read ${high}, and the low that followed, in ${longMonth(trough.month)}, ${Math.round(trough.value)}.`;
+    } else {
+      context = ` The ${top} read ${high}.`;
+    }
+  }
+
+  return reading(zone.label, TONE_OF_STEP[zone.step]!, lead + context);
 }

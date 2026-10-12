@@ -317,10 +317,10 @@ export const GLOSSARY = {
   newsCategory: {
     title: "How a headline reads",
     short:
-      "A badge marking a headline bullish or bearish, shown only where the reading is confident enough to be worth showing.",
-    long: 'It is a reading of the **headline text alone**. No article is read — the feed is Google News RSS, which carries a title and no body — and no price, volume or chart is consulted. It is not a forecast, it is not advice, and nothing about it reaches the valuation model.\n\nThe first attempt at this was a word scorer, and it was rejected: measured against 1,842 headlines it got the direction wrong about a quarter of the time in ways that looked confident, reading "Bitcoin climbs despite equity weakness" as bearish and "no user funds lost" as bullish. What makes the current version showable is not that it is never wrong but that it reports how sure it is, and below a threshold the badge simply does not appear. Roughly a third of headlines get no badge, which is the mechanism working rather than failing.\n\nOne reading per headline, not per chain. A story naming two chains carries the same badge on both, so the occasional headline that is good for one and bad for the other is marked for whichever it reads as overall.\n\nWhere the reading is unavailable — it is the one paid source in this app, and it is optional — the badge falls back to naming the event instead, from a keyless pattern match on the same title.',
+      "Every headline is marked bullish or bearish. A solid badge is a clear reading; an outlined one, “Leans”, is the side an unsure reading tips to.",
+    long: 'It is a reading of the **headline text alone**. No article is read — the feed is Google News RSS, which carries a title and no body — and no price, volume or chart is consulted. It is not a forecast, it is not advice, and nothing about it reaches the valuation model.\n\nThe first attempt at this was a word scorer, and it was rejected: it got the direction wrong about a quarter of the time in ways that looked confident. What made the current version showable is that it reports how sure it is. Where it is sure, the badge is solid. Where it is not, the badge still names the side the headline tips to and says "Leans" — measured against hand-labelled headlines, that side was right 92% of the time where a headline had a direction at all. Price predictions and listicles always read as leans, however sure the model is, because a page selling a prediction reads confidently whatever is true.\n\nThe leans are noise, kept on purpose, and the noise tilts bullish: headlines with no real direction lean that way more often than not, because the press does. The daily counts keep leans apart from clear readings for that reason.\n\nOne reading per headline, not per chain. A story naming two chains carries the same badge on both. Where the reading is unavailable — it is the one paid source in this app, and it is optional — the badge falls back to naming the event instead, from a keyless pattern match on the same title.',
     example:
-      'Positive badges outnumber negative ones roughly two to one. That is the press, not the market: outlets write "surges" far more often than "drops".',
+      'Bullish badges outnumber bearish ones about three to one. That is the press, not the market: outlets write "surges" far more often than "drops".',
   },
 
   attention: {
@@ -346,6 +346,17 @@ export const GLOSSARY = {
     long: "Alternative.me's index, the one every aggregator republishes. It blends volatility, market momentum and volume, social media activity, Bitcoin dominance and search trends into a single daily figure.\n\nThe conventional reading is contrarian: extreme fear has tended to accompany bottoms and extreme greed tops. That is a tendency, not a rule, and this app shows the index rather than scoring on it.",
     example:
       "74 reads as Greed. Below 25 is Extreme fear; above 75 is Extreme greed.",
+  },
+
+  searchInterest: {
+    title: "Search interest",
+    short:
+      "How hard the world is searching Google for crypto: five terms, each against its own busiest month since 2004, averaged.",
+    long: 'The terms are "bitcoin", "crypto", "buy crypto", "buy bitcoin" and "coinbase" — the asset, the category, two ways of asking to buy, and the place most people do. Each was chosen because it has existed through every cycle since 2013, so the average means the same thing in 2017 as today.\n\nGoogle never publishes search counts. It scales each term so its busiest month reads 100, which makes a term comparable with its own past but not with the other terms: "bitcoin" at 21 and "buy crypto" at 44 says each sits at that share of its own peak, not that one was searched more. The current month is left out until it ends, because Google reports a partial month scaled down.\n\nThe named zones are cut where the average stood at turns already on record — both bear-market lows sat below 15, both manias above 60 — so they describe four cycles, not a law. Nothing here reaches the valuation model.',
+    formula:
+      "The mean of the five terms' monthly values, each 0–100 against that term's own busiest month since 2004. Withheld for any month a term is missing.",
+    example:
+      "The May 2021 mania read 75 and the March 2019 low 5. Below 15 is Cold; 60 and above is Mania.",
   },
 
   rainbowBand: {

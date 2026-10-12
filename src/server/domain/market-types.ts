@@ -4,12 +4,15 @@
  * Everything in this file is **display-only**. None of it is imported by
  * `score.ts` or `aggregate.ts`, and nothing here may influence a chain's rank.
  *
- * Three payloads share one set of cached upstream fetches:
+ * Four payloads share one set of cached upstream fetches:
  *
- *   `MarketBrief`   small; prefetched on the server for the always-visible rail
- *   `MarketCycle`   the overlay series for the market-cycle panel; fetched by the
- *                   client after first paint
- *   `MarketDetail`  the full rainbow and histories, fetched when the window opens
+ *   `MarketBrief`      small; prefetched on the server for the always-visible rail
+ *   `MarketCycle`      the overlay series for the market-cycle panel; fetched by
+ *                      the client after first paint
+ *   `MarketDetail`     the full rainbow and histories, fetched when the window
+ *                      opens
+ *   `SearchInterest`   Google search interest, fetched when the window opens and
+ *                      on its own, so a slow Google never holds the rest
  *
  * Every field that comes from an upstream is nullable. A source that fails or
  * times out produces a null, never an error, and the interface says so.
@@ -20,7 +23,12 @@ import type { TopModel, TopModelId } from "~/lib/cycle-models";
 /* ---------------------------------------------------------------- sources ---- */
 
 export type MarketSourceId =
-  "coinmetrics" | "alternative-me" | "coingecko" | "defillama" | "mempool";
+  | "coinmetrics"
+  | "alternative-me"
+  | "coingecko"
+  | "defillama"
+  | "mempool"
+  | "google-trends";
 
 export interface MarketSource {
   id: MarketSourceId;
@@ -83,6 +91,17 @@ export interface FearGreedHistory {
   classifications: string[];
 }
 
+/**
+ * One search term's monthly history from Google Trends: complete months only,
+ * each 0–100 against the term's own busiest month since 2004.
+ */
+export interface SearchTermHistory {
+  term: string;
+  /** First month, YYYY-MM. */
+  start: string;
+  values: number[];
+}
+
 export interface TopMarketRow {
   id: string;
   symbol: string;
@@ -143,6 +162,16 @@ export interface MarketBrief {
     centre: number | null;
   };
   halving: HalvingStatus | null;
+  /**
+   * Search interest: the five terms' mean for the last complete month. `spark`
+   * is monthly, not daily. Unavailable whenever any of the five did not answer.
+   */
+  searchInterest: Tile & {
+    /** The month read, YYYY-MM. */
+    month: string | null;
+    /** The composite's highest month since 2016. */
+    peak: SearchMonth | null;
+  };
   /** Where Bitcoin sits in its four-year cycle, and what the spacing implies. */
   cycle: {
     phase: BitcoinCycles["phase"];
@@ -153,6 +182,48 @@ export interface MarketBrief {
     nextTop: BitcoinCycles["nextTop"];
   } | null;
   sources: MarketSource[];
+}
+
+/* ------------------------------------------------------ search interest ---- */
+
+export interface SearchMonth {
+  /** YYYY-MM. */
+  month: string;
+  value: number;
+}
+
+/**
+ * Google search interest in five crypto terms, monthly, and the composite of
+ * the five. Fetched by the Market window, never prefetched.
+ *
+ * Every value is the term's interest that month against its own busiest month
+ * since 2004 — 100 — not a count of searches, and not comparable between
+ * terms: "bitcoin" at 21 and "buy crypto" at 44 says each sits at that share
+ * of its own peak, nothing about which was searched more.
+ */
+export interface SearchInterest {
+  generatedAt: string;
+  /** First month on the grid, YYYY-MM. */
+  start: string;
+  /** Months on the grid, ending with the last complete month. */
+  months: number;
+  terms: {
+    term: string;
+    /** On the grid; null where the term did not answer. */
+    values: (number | null)[];
+    /** The month the term read 100, from its full history. */
+    peak: string | null;
+  }[];
+  /** The mean of the five, on months every term answered. */
+  composite: (number | null)[];
+  latest: SearchMonth | null;
+  reading: Reading | null;
+  /** The composite's highest month on the grid, and its lowest since. */
+  peak: SearchMonth | null;
+  trough: SearchMonth | null;
+  /** How many of the terms answered this run. */
+  answered: number;
+  source: MarketSource;
 }
 
 /* -------------------------------------------------------------- the cycle ---- */

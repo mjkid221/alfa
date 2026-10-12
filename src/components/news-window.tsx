@@ -5,6 +5,7 @@ import { Explain } from "~/components/ui/explain";
 import { NewsBadge } from "~/components/news/news-badge";
 import { useMemo, useState } from "react";
 
+import { NewsDailyChart } from "~/components/news/news-daily";
 import { OutletMark } from "~/components/news/outlet-mark";
 import { FloatingWindow } from "~/components/window/floating-window";
 import { cn } from "~/lib/cn";
@@ -70,7 +71,7 @@ export function NewsWindow({
       defaultSize={{ width: 580, height: 660 }}
     >
       {feed.data ? (
-        <NewsList news={news} coverage={coverage} />
+        <NewsList news={news} coverage={coverage} daily={feed.data.daily} />
       ) : (
         <div className="text-ink-muted grid h-full place-items-center px-8 text-center text-[13px]">
           {feed.isError
@@ -85,9 +86,11 @@ export function NewsWindow({
 function NewsList({
   news,
   coverage,
+  daily,
 }: {
   news: readonly Headline[];
   coverage: readonly NewsFeed["coverage"][number][];
+  daily: NewsFeed["daily"];
 }) {
   const [chain, setChain] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -101,6 +104,13 @@ function NewsList({
   const chains = useMemo(
     () => coverage.filter((entry) => entry.found > 0),
     [coverage],
+  );
+
+  // Without the classifier there are no directions to count, and a chart of
+  // zeros would read as a quiet month rather than a missing source.
+  const readable = useMemo(
+    () => news.some((item) => item.direction !== null),
+    [news],
   );
 
   const visible = useMemo(() => {
@@ -154,23 +164,34 @@ function NewsList({
         </div>
       </div>
 
+      {daily && readable ? (
+        <NewsDailyChart daily={daily} chain={chain} />
+      ) : (
+        <p className="border-hairline text-ink-faint shrink-0 border-b px-4 py-2 text-[11px]">
+          Bullish and bearish counts need the direction reading, which is
+          unavailable this run.
+        </p>
+      )}
+
       {chain && (
         <p className="border-hairline text-ink-faint shrink-0 border-b px-4 py-2 text-[11px]">
           {(() => {
             const entry = chains.find((c) => c.chain === chain);
             if (!entry) return `Nothing found for ${chain}.`;
 
-            // Count what is on screen, not what the search returned. Two
+            // Count what is on screen, not what the search returned. Three
             // things shrink the list: a search result whose headline never
             // names the chain is dropped, because a search for a chain named
-            // after an English word mostly returns other people's news; and the
-            // same story running at two outlets under one headline collapses
+            // after an English word mostly returns other people's news; price
+            // tickers and currency converters are dropped, being pages rather
+            // than articles; and the same story turning up twice — at two
+            // outlets, or in both the month's search and the day's — collapses
             // into a single row.
             const listed = visible.length;
             const dropped = entry.found - listed;
 
             return dropped > 0
-              ? `${listed} article${listed === 1 ? "" : "s"} about ${chain} in the last 30 days, from ${entry.found} search results — the other ${dropped} either did not name ${chain} or repeated a headline already listed.`
+              ? `${listed} article${listed === 1 ? "" : "s"} about ${chain} in the last 30 days, from ${entry.found} search results — the other ${dropped} did not name ${chain}, were price pages rather than articles, or repeated a headline already listed.`
               : `All ${listed} article${listed === 1 ? "" : "s"} about ${chain} in the last 30 days.`;
           })()}
         </p>
@@ -203,6 +224,7 @@ function NewsList({
                 <span className="text-ink-faint mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                   <NewsBadge
                     direction={item.direction}
+                    leaning={item.leaning}
                     category={item.category}
                   />
                   <span>{item.source}</span>
