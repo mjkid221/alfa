@@ -887,6 +887,33 @@ pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
 ```
 
+### Offline cycle forecast comparison
+
+`pnpm compare:cycles` compares Premium, corrected Premium and declining
+peak-to-peak growth under both timing rules. It runs offline from the frozen
+daily-close anchors in `scripts/cycle-forecast/anchors.json`, reusing the app's
+Premium and bottom-curve fits. Node 22.6+ is required for built-in TypeScript stripping.
+
+The [dated comparison](reports/bitcoin-cycle-comparison.txt) includes forecasts
+issued 90 days after the supplied 2018 and 2022 bottoms, separate known-date
+diagnostics, model rankings and current estimates. It assumes those starting
+bottoms were known; it does not measure live turn detection. The 2025 top and
+2026 bottom remain user assumptions. Corrected Premium has only one subsequent
+cycle on which its learned correction can be tested, and that outcome is the
+assumed 2025 top. The experiment does not change the app's UI or default model.
+
+```bash
+pnpm --silent compare:cycles > reports/bitcoin-cycle-comparison.txt
+pnpm --silent compare:cycles --json  # machine-readable issues and scores
+pnpm test:cycles                    # isolation, calibration, math and parity
+```
+
+The fixture records its source and the app's reference output. Re-running it
+reproduces the dated experiment; updating it is a new experiment, not a live
+data refresh. Price rankings average the two timing scenarios within each
+cycle before averaging cycles, and report the worst individual miss. No
+uncertainty percentage or future accuracy guarantee is inferred from two cycles.
+
 ## Market context
 
 Beside the ranking sits a rail of six market signals that read at a glance —

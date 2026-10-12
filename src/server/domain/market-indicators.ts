@@ -625,7 +625,7 @@ const genesisDays = (start: string, index: number) =>
     (Date.parse(start) + index * DAY_MS - Date.parse(GENESIS)) / DAY_MS,
   );
 
-const fitCurve = (points: readonly CycleExtreme[]): CycleFit | null => {
+export const fitCurve = (points: readonly CycleExtreme[]): CycleFit | null => {
   if (points.length < 3) return null;
   // `linearFit` wants eight points; three or four cycle extremes are all
   // Bitcoin has, so the two-parameter fit is done here directly.
