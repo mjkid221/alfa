@@ -266,6 +266,16 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
   `waitUntil`, six days per refresh, newest first; 255 day-bounded searches took
   21.6s at six in flight with every one answered. A promptly swept day holds
   180–330 headlines against the month's 40–130.
+- **Google News refuses a client after a burst, and a refused refresh must
+  throw, never return empty.** A few thousand searches from one address during
+  the tally backfill (12 October 2026) got every later search a 503, each after
+  about nine seconds. A refresh that met only refusals returned an empty feed,
+  `cachedValue` stored it over the good one, and the Headlines window went blank
+  for everyone sharing the cache. Now a pass gives up after 12 straight
+  failures, a mostly-unanswered pass throws (so the last good feed keeps being
+  served), and a refused pass opens a 15-minute cool-off. Sweeps run two days
+  per refresh, not six. Never point a local server at the production Redis
+  while hammering Google from it.
 - **A day-bounded search decays with the day's age, so sweeps must be prompt.**
   Backfilling a month, Saturdays swept 1, 8, 15, 22 and 29 days late held 235,
   133, 111, 57 and 31 headlines. The same question is only the same question at

@@ -15,7 +15,7 @@ import type {
   NewsDayCount,
   NewsDirection,
 } from "~/server/domain/types";
-import { deadline, mapLimit, settle } from "~/server/lib/http";
+import { deadline, mapLimit, settle, UpstreamError } from "~/server/lib/http";
 import {
   classifyDirections,
   type DirectionReading,
@@ -322,6 +322,53 @@ function queryFor(name: string, recency: string): string {
 }
 
 /**
+ * Searches that give up together, and know when they were refused.
+ *
+ * Google News answers a client it has decided is a bot with a 503 after about
+ * nine seconds, and once it starts it refuses everything: measured 12 October
+ * 2026, after a few thousand searches from one address during a backfill. A
+ * pass of 170 searches into a refusal would be four minutes of nothing, so a
+ * pass stops asking once its first `GIVE_UP` searches have all failed — about
+ * eighteen seconds at six in flight — and reports that it was refused, which
+ * is a different fact from a quiet news day.
+ */
+const GIVE_UP = 12;
+
+function searchPass() {
+  let answered = 0;
+  let failed = 0;
+  return {
+    async search(query: string) {
+      if (answered === 0 && failed >= GIVE_UP) return null;
+      const items = await search(query);
+      if (items === null) failed++;
+      else answered++;
+      return items;
+    },
+    /** More went unanswered than answered: a refusal, not an empty day. */
+    get refused() {
+      return failed > answered;
+    },
+    get failed() {
+      return failed;
+    },
+    get asked() {
+      return answered + failed;
+    },
+  };
+}
+
+/**
+ * Epoch ms before which Google News is not asked at all.
+ *
+ * Opened by a refused pass. Without it, a cold cache would re-run a whole pass
+ * on every request while Google is refusing, which is how a refusal is kept
+ * going; with it, a refusal costs one short pass every fifteen minutes.
+ */
+let coolOffUntil = 0;
+const COOL_OFF_MS = 15 * 60_000;
+
+/**
  * One search, parsed, or null when it was not answered — which a day sweep
  * needs to tell apart from a day with nothing to find.
  */
@@ -379,14 +426,28 @@ export function fetchHeadlines(
     `news:headlines:v5:${names.length}`,
     { ttlSeconds: 1800, staleSeconds: 21_600 },
     async (): Promise<NewsResult> => {
+      // A refresh that cannot reach Google must throw rather than return an
+      // empty feed. `cachedValue` keeps serving the last good feed when a
+      // refresh throws, and would store an empty one for half an hour if it
+      // were returned: on 12 October 2026 a refused refresh did exactly that,
+      // and the Headlines window was blank for everyone until it expired.
+      if (Date.now() < coolOffUntil) {
+        throw new UpstreamError(
+          "Google News is refusing searches; cooling off",
+          SEARCH,
+          503,
+        );
+      }
+
+      const pass = searchPass();
       const perChain = await mapLimit(targets, 6, async (entry) => {
         const chain = entry.name;
         // One after the other within a chain, so six chains in flight is still
         // six requests against Google, as it was with one search each.
         // A search that fails costs its own results and nothing more.
         const all = [
-          ...((await search(queryFor(chain, MONTH))) ?? []),
-          ...((await search(queryFor(chain, DAY))) ?? []),
+          ...((await pass.search(queryFor(chain, MONTH))) ?? []),
+          ...((await pass.search(queryFor(chain, DAY))) ?? []),
         ];
 
         // Keep only what is actually about this chain. Google returns its best
@@ -426,6 +487,15 @@ export function fetchHeadlines(
           })),
         };
       });
+
+      if (pass.refused) {
+        coolOffUntil = Date.now() + COOL_OFF_MS;
+        throw new UpstreamError(
+          `Google News answered ${pass.asked - pass.failed} of ${pass.asked} searches`,
+          SEARCH,
+          503,
+        );
+      }
 
       // The same story often surfaces for several chains; keep one copy and let
       // it carry every chain it was found under.
@@ -602,8 +672,13 @@ const TALLY_KEY = `${CACHE_PREFIX}:news:tally:v1`;
 /** Refreshed on every write, so an active tally never expires. */
 const TALLY_TTL_SECONDS = 60 * 24 * 60 * 60;
 
-/** Past days searched per refresh. 85 searches a day, about 7s each day. */
-const SWEEP_DAYS = 6;
+/**
+ * Past days searched per refresh. 85 searches a day, about 7s each day. Six
+ * cleared a month's backlog in five refreshes, and the backlog's few thousand
+ * searches from one address are what got it refused; two is gentler, and the
+ * steady state is one.
+ */
+const SWEEP_DAYS = 2;
 /** More failed searches than this and a day is not marked swept. */
 const SWEEP_MAX_FAILURES = 4;
 /** A day swept later than this many days after it ended undercounts. */
@@ -799,6 +874,7 @@ function sweepInBackground(
 async function sweepPastDays(
   targets: readonly { name: string; symbol: string | null }[],
 ) {
+  if (Date.now() < coolOffUntil) return;
   const tally = await loadTally();
   if (!tally.persist) return;
 
@@ -818,16 +894,13 @@ async function sweepPastDays(
     const next = new Date(Date.parse(day) + 86_400_000)
       .toISOString()
       .slice(0, 10);
-    let failed = 0;
+    const pass = searchPass();
 
     const found = await mapLimit(targets, 6, async (entry) => {
-      const items = await search(
+      const items = await pass.search(
         queryFor(entry.name, `after:${day} before:${next}`),
       );
-      if (items === null) {
-        failed++;
-        return [];
-      }
+      if (items === null) return [];
       const terms = termsFor(entry);
       return items
         .filter(
@@ -837,11 +910,16 @@ async function sweepPastDays(
     });
 
     record(tally.entries, found.flat(), days[0]!);
-    if (failed <= SWEEP_MAX_FAILURES) {
+    if (pass.failed <= SWEEP_MAX_FAILURES) {
       tally.swept.set(
         day,
         Math.round((Date.parse(today) - Date.parse(day)) / 86_400_000),
       );
+    } else {
+      // A day Google would not answer stops the pass: the next day would be
+      // refused too, at 85 searches a time.
+      if (pass.refused) coolOffUntil = Date.now() + COOL_OFF_MS;
+      break;
     }
   }
 
