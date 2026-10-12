@@ -1,0 +1,100 @@
+BITCOIN NEXT-TOP COMPARISON — 2026-10-12
+
+Conditional on knowing each supplied starting bottom; this does not test live turning-point detection.
+The 2025 top ($124,820, 6 October) and 2026 bottom ($58,525, 30 June) are user assumptions.
+Two evaluated cycles, one assumed outcome. Six model/clock combinations do not create more cycles.
+
+HISTORICAL ADVANCE FORECASTS
+Issued 90 days after each supplied bottom. Price errors are signed; positive days mean late.
+
+Target 2021-11-08: $67,542. Issued 2019-03-15.
+Price model       | Timing        | Predicted date | Predicted price | Price error | Days error | Correction
+------------------+---------------+----------------+-----------------+-------------+------------+------------------
+premium           | top-to-top    | 2021-12-28     | $84,090         | +24.5%      | +50        | 1.0000x (0 prior)
+corrected-premium | top-to-top    | 2021-12-28     | $84,090         | +24.5%      | +50        | 1.0000x (0 prior)
+declining-growth  | top-to-top    | 2021-12-28     | $180,357        | +167.0%     | +50        | 1.0000x (0 prior)
+premium           | bottom-to-top | 2021-11-16     | $81,460         | +20.6%      | +8         | 1.0000x (0 prior)
+corrected-premium | bottom-to-top | 2021-11-16     | $81,460         | +20.6%      | +8         | 1.0000x (0 prior)
+declining-growth  | bottom-to-top | 2021-11-16     | $180,357        | +167.0%     | +8         | 1.0000x (0 prior)
+
+Target 2025-10-06 (assumed): $124,820. Issued 2023-02-07.
+Price model       | Timing        | Predicted date | Predicted price | Price error | Days error | Correction
+------------------+---------------+----------------+-----------------+-------------+------------+------------------
+premium           | top-to-top    | 2025-10-26     | $172,800        | +38.4%      | +20        | 1.0000x (0 prior)
+corrected-premium | top-to-top    | 2025-10-26     | $138,795        | +11.2%      | +20        | 0.8032x (1 prior)
+declining-growth  | top-to-top    | 2025-10-26     | $148,876        | +19.3%      | +20        | 1.0000x (0 prior)
+premium           | bottom-to-top | 2025-10-07     | $171,200        | +37.2%      | +1         | 1.0000x (0 prior)
+corrected-premium | bottom-to-top | 2025-10-07     | $141,949        | +13.7%      | +1         | 0.8291x (1 prior)
+declining-growth  | bottom-to-top | 2025-10-07     | $148,876        | +19.3%      | +1         | 1.0000x (0 prior)
+
+PRICE RANKING
+Average the two timing scenarios within each cycle, then average cycles equally. Worst miss spans all matched scenarios.
+Model             | Cycles | Mean absolute log error | Worst absolute log error | Worst price miss
+------------------+--------+-------------------------+--------------------------+-----------------
+corrected-premium | 2      | 0.1603                  | 0.2191                   | 24.5%
+premium           | 2      | 0.2619                  | 0.3253                   | 38.4%
+declining-growth  | 2      | 0.5792                  | 0.9822                   | 167.0%
+
+TIMING RANKING
+Timing        | Cycles | Mean absolute days error | Worst days error
+--------------+--------+--------------------------+-----------------
+bottom-to-top | 2      | 4.5                      | 8
+top-to-top    | 2      | 35.0                     | 50
+
+CURRENT CONDITIONAL FORECASTS — issued 2026-10-12
+Price model       | Timing        | Estimated date | Estimated price | Correction
+------------------+---------------+----------------+-----------------+------------------
+premium           | top-to-top    | 2029-09-16     | $232,700        | 1.0000x (0 prior)
+corrected-premium | top-to-top    | 2029-09-16     | $177,498        | 0.7628x (2 prior)
+declining-growth  | top-to-top    | 2029-09-16     | $178,277        | 1.0000x (0 prior)
+premium           | bottom-to-top | 2029-05-28     | $225,900        | 1.0000x (0 prior)
+corrected-premium | bottom-to-top | 2029-05-28     | $176,002        | 0.7791x (2 prior)
+declining-growth  | bottom-to-top | 2029-05-28     | $178,277        | 1.0000x (0 prior)
+
+RECOMMENDATION FOR THIS COMPARISON
+corrected-premium with bottom-to-top: 2029-05-28, approximately $176,002.
+This selects the best historical combination on these same two outcomes; there is no independent test of the selection itself.
+Corrected Premium has only one subsequent evaluation cycle after learning a correction (2025, assumed).
+Its 2021 forecast has no earlier error to learn from and equals uncorrected Premium.
+The earlier-bottom timing rule extrapolates the usual bull-run length; the other clock extrapolates the usual full-cycle length.
+Their disagreement remains a timing assumption, not a measured confidence interval. Historical errors do not guarantee future accuracy.
+The app's display, current default and user-supplied assumptions remain unchanged.
+
+KNOWN-ACTUAL-DATE DIAGNOSTIC — excluded from rankings
+The original issue's fit and correction evaluated at the now-known peak date; this is not an advance timing result.
+Target     | Price model       | Issued timing | Price at actual date | Error
+-----------+-------------------+---------------+----------------------+--------
+2021-11-08 | premium           | top-to-top    | $80,970              | +19.9%
+2021-11-08 | corrected-premium | top-to-top    | $80,970              | +19.9%
+2021-11-08 | declining-growth  | top-to-top    | $180,357             | +167.0%
+2021-11-08 | premium           | bottom-to-top | $80,970              | +19.9%
+2021-11-08 | corrected-premium | bottom-to-top | $80,970              | +19.9%
+2021-11-08 | declining-growth  | bottom-to-top | $180,357             | +167.0%
+2025-10-06 | premium           | top-to-top    | $171,100             | +37.1%
+2025-10-06 | corrected-premium | top-to-top    | $137,429             | +10.1%
+2025-10-06 | declining-growth  | top-to-top    | $148,876             | +19.3%
+2025-10-06 | premium           | bottom-to-top | $171,100             | +37.1%
+2025-10-06 | corrected-premium | bottom-to-top | $141,866             | +13.7%
+2025-10-06 | declining-growth  | bottom-to-top | $148,876             | +19.3%
+
+PRODUCTION PARITY
+Frozen app response through 2026-10-11: premium-decay, 2029-08-29 to 2029-10-18, $231,600–$234,600.
+Reused production formula on those same dates: $231,600–$234,600.
+That production range covers variation across dates only, not historical price errors.
+
+METHOD
+Premium uses the existing production fit and rounding, rebuilding its bottom curve at each cutoff.
+Corrected Premium multiplies by the median actual/predicted ratio of earlier Premium forecasts using the same timing rule.
+Declining growth: r[i] = ln(top[i]/top[i-1]); fit ln(r[i]) = a + b*i with b <= 0; next price = last top * exp(exp(a + b*nextIndex)).
+A bounded slope also refits the intercept. Nonpositive returns or fewer than two returns are insufficient data.
+Timing uses rounded mean intervals with starting extrema from June 2012 onward, matching the app's exclusion of the 2011 cycle.
+Anchors are frozen inputs; daily data and extrema detected with later observations never enter the historical fits.
+
+REPRODUCE
+pnpm --silent compare:cycles
+pnpm --silent compare:cycles --json
+pnpm test:cycles
+
+SOURCE
+CoinMetrics community daily PriceUSD, captured 2026-10-12 through 2026-10-11. Extrema and five-significant-digit prices match the app's detectCycles output. These are supplied anchors, not claims that turns were identifiable on those dates.
+https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=PriceUSD&frequency=1d&page_size=10000&start_time=2010-07-18&end_time=2026-10-11

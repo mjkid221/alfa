@@ -14,7 +14,9 @@
     "preview": "next build && next start",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "knip": "knip"
+    "knip": "knip",
+    "compare:cycles": "node --experimental-strip-types --import ./scripts/register-typescript.mjs scripts/cycle-forecast/compare.ts",
+    "test:cycles": "node --experimental-strip-types --import ./scripts/register-typescript.mjs --test scripts/cycle-forecast/study.test.ts"
   },
   "dependencies": {
     "@t3-oss/env-nextjs": "^0.12.0",
