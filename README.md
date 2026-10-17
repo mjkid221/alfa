@@ -257,6 +257,24 @@ as unlocked where CoinGecko reports 11.8B circulating, because an unlocked
 treasury allocation is released without being in anyone's hands. Both figures
 appear, with that sentence next to them.
 
+### Price charts
+
+Every chain with a priced token has a candlestick chart on its page: 1W, 1M, 3M,
+1Y and Max, a log axis, and the latest price with its change over the range. Hover
+a candle for its open, high and low. It is drawn by TradingView's free,
+open-source [Lightweight Charts](https://www.tradingview.com/lightweight-charts/)
+— the licensed Charting Library is not needed — and carries TradingView's
+attribution mark as the licence asks.
+
+The candles are one exchange's spot market, named under the chart. Exchanges
+know a token only by its ticker, and tickers collide — Binance's PROS is not
+Pharos, Gate's HDX is not Hydration — so a market is used only where its price is
+within 10% of the app's own for that CoinGecko id. Kraken is asked first, then
+Binance, OKX, Gate and MEXC; between them they cover 70 of the 73 priced tokens.
+The other three get DefiLlama's aggregated price drawn as a line, which the
+chart says, because DefiLlama has one reading per step and no open, high or low.
+Like the market layer, the chart is shown and never scored.
+
 ### Comparing two chains
 
 A **Compare** window answers the marketcapof.com question — what one chain's
@@ -535,7 +553,8 @@ src/
   lib/glossary.ts          every on-screen term, defined once
   server/sources/bridges/  one adapter per protocol, normalised in shared.ts
   components/
-    chart/                 hand-built SVG: scatter, area, sankey, sparkline, bars
+    chart/                 hand-built SVG: scatter, area, sankey, sparkline, bars;
+                           price-chart.tsx is TradingView Lightweight Charts
     ui/explain.tsx         the definition popover, portalled past overflow
     window/                a draggable, minimisable panel and its shared state
   server/sources/l2beat.ts which chains are actually rollups

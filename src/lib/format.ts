@@ -59,10 +59,13 @@ export function formatPrice(value: number | null | undefined): string {
       maximumFractionDigits: 2,
     })}`;
   }
+  // Zero has no leading digit to count from: log10(0) is -Infinity and
+  // toFixed throws. A chart's price axis asks for it on its way to a tick.
+  if (abs === 0) return "$0.00";
   // toPrecision keeps four significant digits wherever the leading zeros end;
   // Number() then strips the exponent form toPrecision reaches for below 1e-7.
   return `${sign}$${Number(abs.toPrecision(4)).toFixed(
-    Math.max(2, 4 - Math.floor(Math.log10(abs)) - 1),
+    Math.min(100, Math.max(2, 4 - Math.floor(Math.log10(abs)) - 1)),
   )}`;
 }
 
@@ -227,7 +230,11 @@ export function formatPercent(
     return "—";
   const { digits = 1, signed = true } = options;
   const sign = value > 0 ? (signed ? "+" : "") : value < 0 ? MINUS : "";
-  return `${sign}${Math.abs(value).toFixed(digits)}%`;
+  // Grouped, so a ten-year price change reads "+73,159%" and not "+73159%".
+  return `${sign}${Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}%`;
 }
 
 /** Valuation multiples: `184×`, `1.2k×`, `0.32×`. */
@@ -325,6 +332,22 @@ export function formatAxisDate(
         ? { month: "short", year: "2-digit", timeZone: "UTC" }
         : { day: "numeric", month: "short", timeZone: "UTC" };
   return new Intl.DateTimeFormat("en-GB", options).format(date);
+}
+
+/**
+ * When a price-chart point was read: "17 Oct 2026" for a daily or weekly
+ * series, "17 Oct 2026, 10:20 UTC" for an intraday one. UTC because that is
+ * the grid the chart's own axis is drawn on.
+ */
+export function formatPointTime(seconds: number, intraday: boolean): string {
+  const text = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(intraday ? { hour: "2-digit", minute: "2-digit" } : {}),
+    timeZone: "UTC",
+  }).format(new Date(seconds * 1000));
+  return intraday ? `${text} UTC` : text;
 }
 
 /** Plain integer with thousands separators: "84,463". */

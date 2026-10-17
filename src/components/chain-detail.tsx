@@ -13,6 +13,7 @@ import { useMemo } from "react";
 
 import { AlphaMap, type AlphaPoint } from "~/components/chart/alpha-map";
 import { ChainDeveloperView } from "~/components/chain-developer";
+import { ChainPrice } from "~/components/chain-price";
 import { ChainTokenomics } from "~/components/chain-tokenomics";
 import { NewsBadge } from "~/components/news/news-badge";
 import { OutletMark } from "~/components/news/outlet-mark";
@@ -509,6 +510,20 @@ export function ChainDetail({
                 </div>
               </div>
             </section>
+
+            {/* The panel's presence is decided here, synchronously, from data
+                the page already has, so a chain with no token never reserves
+                space for a chart that cannot exist. */}
+            {chain.keys.geckoId && chain.metrics.price !== null && (
+              <ChainPrice
+                slug={chain.slug}
+                label={
+                  chain.symbol && /[a-z]/i.test(chain.symbol)
+                    ? chain.symbol
+                    : chain.name
+                }
+              />
+            )}
 
             <div className="grid gap-6 xl:grid-cols-2">
               {/* valuation multiples */}

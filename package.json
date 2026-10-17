@@ -29,6 +29,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "geist": "^1.7.2",
+    "lightweight-charts": "^5.2.1",
     "lucide-react": "^1.39.0",
     "next": "^15.2.3",
     "react": "^19.0.0",

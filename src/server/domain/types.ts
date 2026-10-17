@@ -1,5 +1,6 @@
 /** Canonical shapes shared by the server model and the UI. */
 
+import type { PriceResolution } from "~/lib/price-ranges";
 import type { NewsCategory } from "./news-classify";
 
 /**
@@ -503,6 +504,50 @@ export interface TokenUnlockSchedule {
 
   /** DefiLlama's own caveats about this schedule. Shown verbatim. */
   notes: string[];
+}
+
+/**
+ * One candle: `[unix seconds, open, high, low, close]`, or `[unix seconds]`
+ * for an interval the venue has no candle for — kept as a whitespace slot so
+ * the time axis does not close up over it.
+ */
+export type Candle = [number, number, number, number, number] | [number];
+
+/**
+ * One token's price over time, on one uniform grid, for the chain page's chart.
+ * Display only — nothing in the model reads it.
+ *
+ * Candles where one exchange lists the token at a price that agrees with this
+ * app's; otherwise DefiLlama's aggregated price as a line, since that has one
+ * reading per step and no open, high or low.
+ */
+export type PriceChart = CandlePriceChart | LinePriceChart;
+
+export interface CandlePriceChart {
+  kind: "candles";
+  resolution: PriceResolution;
+  /** Seconds between candles. */
+  stepSeconds: number;
+  /** The exchange, as named on screen: "Kraken". */
+  venue: string;
+  /** The market as the exchange quotes it: "SOL/USD", "SCR/USDT". */
+  pair: string;
+  /** Oldest first. The last is the candle still forming. */
+  candles: Candle[];
+}
+
+export interface LinePriceChart {
+  kind: "line";
+  resolution: PriceResolution;
+  /** Seconds between points. Every point sits exactly on the grid. */
+  stepSeconds: number;
+  /**
+   * `[unix seconds, USD]`, oldest first. Leading and trailing gaps are trimmed;
+   * an interior gap is kept as `null`, a whitespace slot, so the time axis keeps
+   * its spacing and the line crosses the gap at its true width rather than
+   * closing it up. DefiLlama's hourly PulseChain is 76% gaps (17 October 2026).
+   */
+  points: [number, number | null][];
 }
 
 export interface AggregateResult {

@@ -12,6 +12,8 @@ import {
   SIZE_FLOOR,
 } from "~/server/domain/score";
 import type { ChainMultiples, NewsDayCount } from "~/server/domain/types";
+import { PRICE_RESOLUTIONS } from "~/lib/price-ranges";
+import { getPriceChart } from "~/server/domain/price-chart";
 import { fetchTokenUnlockSchedule } from "~/server/sources/defillama-emissions";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 
@@ -187,6 +189,32 @@ export const chainsRouter = createTRPCRouter({
         circulatingSupply: chain.metrics.circulatingSupply,
         maxSupply: chain.metrics.maxSupply,
       });
+    }),
+
+  /**
+   * One chain's token price over time, at one resolution, for its chart.
+   *
+   * Never prefetched, so safe to query from inside `HydrateClient` on the same
+   * contract as `news` and `tokenomics`. It does not need warming either: the
+   * chart's height is fixed, so its skeleton is exact and nothing below it
+   * moves when the series lands.
+   *
+   * Candles from an exchange where one can be confirmed, DefiLlama's price as
+   * a line where none can (`domain/price-chart.ts`). Null for a chain with no
+   * token; `unavailable` rather than a thrown error when both fail, so the
+   * panel can say so in place of the chart.
+   */
+  price: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().min(1),
+        resolution: z.enum(PRICE_RESOLUTIONS),
+      }),
+    )
+    .query(async ({ input }) => {
+      const { chains } = await getSnapshot();
+      const chain = chains.find((entry) => entry.slug === input.slug);
+      return chain ? getPriceChart(chain, input.resolution) : null;
     }),
 
   /** Run metadata on its own, for the header freshness indicator. */
