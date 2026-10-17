@@ -32,15 +32,19 @@ patterns, and re-read a file after formatting before patching it again.
 ```
 src/app/                 routes; page.tsx prefetches chains + market.brief; api/health warms caches
 src/server/domain/       score.ts (the model), aggregate.ts (snapshot build, universe, flow union),
-                         market*.ts (display-only market indicators), types.ts
+                         market*.ts (display-only market indicators), price-chart.ts
+                         (candles, else the line), types.ts
 src/server/sources/      one adapter per upstream: defillama, artemis, mayan, coingecko, coinmetrics,
                          alternative-me, mempool, l2beat, news (Google News RSS), typesafe (headline direction),
-                         google-trends (search interest), bridges/{wormhole,debridge}
+                         google-trends (search interest), exchange-candles (Kraken, Binance,
+                         OKX, Gate, MEXC), bridges/{wormhole,debridge}
 src/server/cache/        cachedValue(key, {ttlSeconds, staleSeconds}, loader): L1 map + Upstash Redis,
                          stale-while-revalidate, refreshes kept alive with waitUntil
 src/server/api/routers/  chains (list, detail, meta, news, methodology, compare), market (brief, cycle, detail, search)
 src/components/          screen.tsx (home), division-leaders.tsx (the L1/L2 hero),
-                         chain-detail.tsx, compare-window.tsx, table/, chart/,
+                         chain-detail.tsx, chain-price.tsx (the price panel),
+                         compare-window.tsx, table/, chart/ (hand-built SVG, except
+                         price-chart.tsx on TradingView Lightweight Charts),
                          market/, window/, ui/
 src/lib/                 palette (tiers, rainbow, zone strokes), glossary, format, cycle-models, market-zones
 src/stores/              zustand filters store (persisted; version-bump + migrate on shape changes)
@@ -117,6 +121,57 @@ src/stores/              zustand filters store (persisted; version-bump + migrat
 
 - DefiLlama coins `/chart` caps at 500 points per request: daily for ~15 months,
   weekly (`period=1w`) since late 2017, spliced onto one daily grid.
+- **The chain page's price chart is TradingView's free Lightweight Charts**
+  (Apache 2.0, `lightweight-charts`), not the licensed Charting Library. It
+  needs the attribution notice in code (the docblock in `chart/price-chart.tsx`)
+  and a link to tradingview.com on the page, which is the `attributionLogo` it
+  draws — leave it on. It brings no data of its own.
+- **Candles come from one exchange, matched by ticker and confirmed by price**
+  (`sources/exchange-candles.ts`). DefiLlama has no open, high or low, so OHLC
+  is read from keyless exchange APIs, which know a token only by its ticker —
+  and tickers collide: Binance's PROS was $0.037 against Pharos' $0.635, Gate's
+  HDX $310 against Hydration's $0.0074 (17 October 2026). A market is used only
+  if its latest daily close is within **10%** of the snapshot price: 3% wrongly
+  rejected Osmosis, 4.4% off on every exchange because the snapshot is minutes
+  old, while every collision was off by a multiple. The same check drops
+  delisted books (Binance's WAVES at 4.4×). Two tickers are tried, DefiLlama's
+  for the CoinGecko id first (`/prices/current` returns `symbol`): Scroll trades
+  as SCR, X Layer's gas token is OKB, Morph's BGB.
+- **Kraken first, then Binance (`data-api.binance.vision`), OKX, Gate, MEXC.**
+  Kraken alone covers 58 of the 73 priced tokens, serves 1h/4h/1d/1w in one
+  request each (720 candles; weekly Bitcoin back to October 2013), and is
+  US-regulated, so Vercel's US region picks the same market a local run does;
+  the five reach 70, leaving Provenance, Hydration and PulseChain on DefiLlama's
+  line. Bybit (refuses US addresses) and KuCoin (Gate covers all it adds) were
+  measured and left out. **US reachability of the others is unverified**: no US
+  vantage point was available, so an exchange that refuses or fails is benched
+  for 15 minutes and the next answers. Unlisted pairs are cheap errors, not
+  failures — HTTP 400 at Binance, Gate and MEXC, `EQuery:` at Kraken ("Unknown
+  asset pair", but "Invalid asset pair" for RON and WAVES), `51xxx` at OKX —
+  and must never bench an exchange: treating Kraken's "Invalid" as an outage
+  once sent fifteen minutes of chains to Binance. Weekly candles open on
+  Thursday at Kraken and Monday elsewhere, so the grid starts at the first
+  candle, not the epoch. OKX serves 300 candles and MEXC 500, so a 1Y view
+  from them can begin later than a year ago; the readout says when.
+- **The line fallback is DefiLlama's coins `/chart` by CoinGecko id**, which
+  serves `1h`, `4h`, `1d` and `1w` natively. History begins **28 April 2013**
+  for everything (CoinGecko's first Bitcoin price), so its "Max" is two weekly
+  requests. Anchor the grid at *now*, not a boundary, or the newest point is up
+  to a step stale. Sparse coins stay sparse: hourly PulseChain is 76% gaps.
+- **Lightweight Charts spaces points by index, not time.** Never splice two
+  steps into one series (each week would draw as wide as each day); one range
+  is one resolution, and an interior gap is sent as a whitespace point, not
+  dropped. **The price axis sizes itself to its labels and the library keeps
+  bar spacing when the plot narrows**, so a wider axis pushes candles off an
+  edge — the newest off the right on a log view, a year of PulseChain down to
+  seven months behind "$0.000006492", over several frames. `fitContent()` lost
+  that race and so did re-applying once a frame later; the window is held on
+  `timeScale().subscribeSizeChange` until the reader drags. The latest price is
+  a price line, not the series' last-value label, which shows the newest
+  *visible* price and, on a candle, takes the body colour — transparent for a
+  hollow up candle. A chart-level `localization.priceFormatter` silently
+  overrides the series' tick formatter; wheel-zoom and vertical touch-pan
+  hijack page scrolling, so both are off.
 - CoinMetrics community API returns full BTC history since 2010 in one request
   (nanosecond timestamps; parse the date part). Projected to ~150 KB before
   caching.
